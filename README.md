@@ -5,24 +5,24 @@
 
 
 <details>
-<summary>NOTICE!! (TAP TO READ)</summary>
+<summary>NOTICE!!! (TAP TO READ)</summary>
 
 - For Vps/Panel Deployment You must download the zip from panel sections or from below link else your youtube downloaders wont work on panel.
 
-<a href="https://github.com/clevertechnexus/black-hat-md/archive/refs/heads/main.zip"><img src="https://img.shields.io/badge/DOWNLOAD%20ZIP-yellow" alt="Panel Zip File" width="150"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/archive/refs/heads/main.zip"><img src="https://img.shields.io/badge/DOWNLOAD%20ZIP-yellow" alt="Panel Zip File" width="150"></a>
   
 </details>
 
 <a><img src='https://i.imgur.com/LyHic3i.gif'/></a>
 
   <p align="center">
-<a href="https://github.com/clevertechnexus"><img title="GITHUB" src="https://img.shields.io/badge/GITHUB-CLEVER TECH-red.svg?style=for-the-badge&logo=github"></a>
+<a href="https://github.com/clevertechnexus2"><img title="GITHUB" src="https://img.shields.io/badge/GITHUB-CLEVER TECH-red.svg?style=for-the-badge&logo=github"></a>
 <p/>
 <p align="center">
-<a href="https://github.com/clevertechnexus?tab=followers"><img title="Followers" src="https://img.shields.io/github/followers/clevertechnexus?label=Followers&style=social"></a>
-<a href="https://github.com/clevertechnexus/black-hat-md/stargazers/"><img title="STARS" src="https://img.shields.io/github/stars/clevertechnexus/black-hat-md?&style=social"></a>
-<a href="https://github.com/clevertechnexus/black-hat-md/network/members"><img title="Forks" src="https://img.shields.io/github/forks/clevertechnexus/black-hat-md?style=social"></a>
-<a href="https://github.com/clevertechnexus/black-hat-md/watchers"><img title="Watching" src="https://img.shields.io/github/watchers/clevertechnexus/black-hat-md?label=Watching&style=social"></a>
+<a href="https://github.com/clevertechnexus2?tab=followers"><img title="Followers" src="https://img.shields.io/github/followers/clevertechnexus2?label=Followers&style=social"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/stargazers/"><img title="STARS" src="https://img.shields.io/github/stars/clevertechnexus2/black-hat-md?&style=social"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/network/members"><img title="Forks" src="https://img.shields.io/github/forks/clevertechnexus2/black-hat-md?style=social"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/watchers"><img title="Watching" src="https://img.shields.io/github/watchers/clevertechnexus2/black-hat-md?label=Watching&style=social"></a>
 
 <a><img src='https://i.imgur.com/LyHic3i.gif'/></a>
   
@@ -34,7 +34,7 @@
   
 - This is essential for you to obtain your own safe forked deployable repo especially heroku users.
 
-<a href="https://github.com/clevertechnexus/black-hat-md/fork"><img src="https://img.shields.io/badge/CLICK%20HERE-purple" alt="FORK 𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓 𝐌𝐃" width="150"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/fork"><img src="https://img.shields.io/badge/CLICK%20HERE-purple" alt="FORK 𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓 𝐌𝐃" width="150"></a>
 </details>
 
 <a><img src='https://i.imgur.com/LyHic3i.gif'/></a>
@@ -48,13 +48,13 @@
 
 <div align="center">
 
-<a href="https://session.clevertech.qzz.io" target="_blank">
+<a href="https://session.clevertechnexus.qzz.io" target="_blank">
   <img src="https://img.shields.io/badge/PAIRING_CODE_SERVER_1-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="Server 1"/>
 </a>
 
 &nbsp;&nbsp;&nbsp;
 
-<a href="https://session2.clevertech.qzz.io" target="_blank">
+<a href="https://session1.clevertech.qzz.io" target="_blank">
   <img src="https://img.shields.io/badge/PAIRING_CODE_SERVER_2-25D366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="Server 2"/>
 </a>
 
@@ -84,7 +84,7 @@
 <summary>TAP TO OPEN</summary>
 <a href="https://signup.heroku.com/login"><img src="https://img.shields.io/badge/HEROKU%20SIGNUP-white" alt="Heroku Signup" width="150"></a>
   
-<a href="https://dashboard.heroku.com/new?template=https://github.com/clevertechnexus/black-hat-md"><img src="https://img.shields.io/badge/DEPLOY%20NOW-red" alt="Deploy on Heroku" width="150"></a>
+<a href="https://dashboard.heroku.com/new?template=https://github.com/clevertechnexus2/black-hat-md"><img src="https://img.shields.io/badge/DEPLOY%20NOW-red" alt="Deploy on Heroku" width="150"></a>
 
 - PostgreSQL is **auto-provisioned** via the `heroku-postgresql:essential-0` addon — no manual setup needed.
 - All environment variables are pre-filled from `app.json`. Just add your `SESSION_ID`.
@@ -95,7 +95,7 @@
 **(B) BOT HOSTING PANEL🔥(DISCORD) DEPLOYMENT**
 <details>
 <summary>TAP TO OPEN</summary>
-<a href="https://github.com/clevertechnexus/black-hat-md/archive/refs/heads/main.zip"><img src="https://img.shields.io/badge/DOWNLOAD%20FILES-yellow" alt="Bot Hosting Files" width="150"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/archive/refs/heads/main.zip"><img src="https://img.shields.io/badge/DOWNLOAD%20FILES-yellow" alt="Bot Hosting Files" width="150"></a>
 
 <a href="https://bot-hosting.net/?aff=1357362933151305758"><img src="https://img.shields.io/badge/SIGNUP-gold" alt="Bot Hosting Signup" width="150"></a>
 
@@ -153,7 +153,7 @@
 <summary>TAP TO OPEN</summary>
 <a href="https://app.koyeb.com/auth/signup"><img src="https://img.shields.io/badge/KOYEB%20SIGNUP-purple" alt="Koyeb Signup" width="150"></a>
 
-<a href="https://app.koyeb.com/services/deploy/?type=git&repository=github.com%2Fclevertechnexus%2Fblack-hat-md&branch=main&name=black-hat-md&builder=dockerfile&env%5BSESSION_ID%5D=your%20sessionid%20here"><img src="https://img.shields.io/badge/DEPLOY%20NOW-black" alt="Deploy on Koyeb" width="150"></a>
+<a href="https://app.koyeb.com/services/deploy/?type=git&repository=github.com%2Fclevertechnexus2%2Fblack-hat-md&branch=main&name=black-hat-md&builder=dockerfile&env%5BSESSION_ID%5D=your%20sessionid%20here"><img src="https://img.shields.io/badge/DEPLOY%20NOW-black" alt="Deploy on Koyeb" width="150"></a>
 
 **Steps:**
 1. Fork this repo and sign in to [koyeb.com](https://koyeb.com).
@@ -173,7 +173,7 @@
 **(F) BOT HOSTING PANEL🔥(DISCORD) DEPLOYMENT**
 <details>
 <summary>TAP TO OPEN</summary>
-<a href="https://github.com/clevertechnexus/black-hat-md/archive/refs/heads/main.zip"><img src="https://img.shields.io/badge/DOWNLOAD%20FILES-yellow" alt="Bot Hosting Files" width="150"></a>
+<a href="https://github.com/clevertechnexus2/black-hat-md/archive/refs/heads/main.zip"><img src="https://img.shields.io/badge/DOWNLOAD%20FILES-yellow" alt="Bot Hosting Files" width="150"></a>
 
 <a href="https://bot-hosting.net/?aff=1357362933151305758"><img src="https://img.shields.io/badge/SIGNUP-gold" alt="Bot Hosting Signup" width="150"></a>
 
@@ -192,7 +192,7 @@
 
 **1. Clone the repo**
 ```bash
-git clone https://github.com/clevertechnexus/black-hat-md.git
+git clone https://github.com/clevertechnexus2/black-hat-md.git
 cd black-hat-md
 ```
 
@@ -254,7 +254,7 @@ pm2 restart black-hat-md
 <details>
 <summary>𝗖𝗟𝗜𝗖𝗞 𝗛𝗘𝗥𝗘</summary>
   
-- **[CONTACT SUPPORT](https://clevertech.qzz.io/) For More Info**
+- **[CONTACT SUPPORT](https://clevertechnexus.qzz.io/) For More Info**
 - **Join [WHATSAPP CHANNEL](https://whatsapp.com/channel/0029Vb73SRl1CYoLWtyr4u1X) for Daily Updates.**
 - **Check out my [Github Profile](https://github.com/clevertechnexus) for More Projects.**
 </details>
@@ -263,6 +263,6 @@ pm2 restart black-hat-md
 
 ### 𝟓. 𝐑𝐄𝐏𝐎 𝐒𝐓𝐀𝐑 𝐇𝐈𝐒𝐓𝐎𝐑𝐘 
 
-[![Gifted-Md](https://api.star-history.com/svg?repos=clevertechnexus/black-hat-md&type=Timeline)](#)
+[![Gifted-Md](https://api.star-history.com/svg?repos=clevertechnexus2/black-hat-md&type=Timeline)](#)
 
 <a><img src='https://i.imgur.com/LyHic3i.gif'/></a>
