@@ -380,3 +380,69 @@ gmd(
     }
   }
 );
+
+gmd(
+  {
+    pattern: "pair",
+    category: "owner",
+    react: "🔗",
+    description: "Generate WhatsApp pair code",
+  },
+  async (from, Gifted, conText) => {
+    const { reply, react, body, botName, botFooter } = conText;
+
+    try {
+      // 🔥 GET NUMBER
+      let number = body.split(" ")[1];
+
+      if (!number) {
+        return reply("❌ Example:\n.pair 255712345678");
+      }
+
+      number = number.replace(/\D/g, ""); // remove non-numbers
+
+      if (number.length < 8) {
+        return reply("❌ Invalid number");
+      }
+
+      await react("⏳");
+
+      // 🔥 CALL SESSION API
+      const res = await axios.get(
+        `https://session.clevertech.qzz.io/code?number=${number}&type=short`
+      );
+
+      if (!res.data || !res.data.code) {
+        return reply("❌ Failed to get code");
+      }
+
+      const code = res.data.code;
+
+      let msg =
+`╭══〘〘 *🔗 PAIR CODE* 〙〙═⊷
+┃ NUMBER: ${number}
+┃ CODE: ${code}
+╰━━━━━━━━━━━━━━━━━━━⬣`;
+
+      await react("✅");
+
+      await Gifted.sendMessage(from, {
+        text: msg,
+        contextInfo: {
+          forwardingScore: 1,
+          isForwarded: true,
+          forwardedNewsletterMessageInfo: {
+            newsletterJid: "120363422524788798@newsletter",
+            newsletterName: botName || "BLACK HAT MD",
+            serverMessageId: 143,
+          },
+        },
+      });
+
+    } catch (err) {
+      console.error(err);
+      await react("❌");
+      reply("❌ Error generating pair code");
+    }
+  }
+);
