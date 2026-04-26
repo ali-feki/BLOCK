@@ -8,7 +8,7 @@ module.exports = {
     TIME_ZONE: process.env.TIME_ZONE,
     AUTO_READ_STATUS: process.env.AUTO_READ_STATUS,
     AUTO_LIKE_STATUS: process.env.AUTO_LIKE_STATUS,
-    DATABASE_URL: process.env.DATABASE_URL, // Postress(Get one for free from neon.tech/supabase/render/heroku builtin postgress)...will fallback to path: ./gift/database/database.db if not provided
+    DATABASE_URL: process.env.DATABASE_URL, // Postress(Get one for free from neon.tech/supabase/render/heroku builtin postgress)...will fallback to path: ./black_hat/database/database.db if not provided
 };
 
 let fileName = require.resolve(__filename);
