@@ -31,6 +31,7 @@
     "body-parser": "latest",
     "buffer": "*",
     "dotenv": "*",
+    "canvacord": "*",
     "express": "^4.19.2",
     "ffmpeg-static": "*",
     "file-type": "17.1.6",
