@@ -165,7 +165,7 @@ async function uploadToGithubCdn(buffer, filename) {
         contentType: getFileContentType(path.extname(filename))
     });
 
-    const { data } = await axios.post('https://ghbcdn.giftedtech.co.ke/api/upload.php', form, {
+    const { data } = await axios.post('https://ghbcdn.gifted.co.ke/api/upload.php', form, {
         headers: form.getHeaders(),
         maxContentLength: Infinity,
         maxBodyLength: Infinity
@@ -188,7 +188,7 @@ async function uploadToGiftedCdn(buffer, filename, deleteKey = '') {
         form.append('deleteKey', deleteKey);
     }
 
-    const { data } = await axios.post('https://cdn.giftedtech.co.ke/api/upload.php', form, {
+    const { data } = await axios.post('https://cdn.gifted.co.ke/api/upload.php', form, {
         headers: form.getHeaders(),
         maxContentLength: Infinity,
         maxBodyLength: Infinity
