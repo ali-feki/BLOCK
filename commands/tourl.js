@@ -25,7 +25,7 @@ gmd({
 
 gmd({
     pattern: "catbox",
-    aliases: ["url3"],
+    aliases: ["url3", "url"],
     react: "⬆️",
     category: "uploader",
     description: "Upload any file to Catbox",
