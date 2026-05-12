@@ -6,9 +6,12 @@
   "type": "commonjs",
   "scripts": {
     "dev": "node index.js",
-    "start": "pm2 start index.js --deep-monitoring --attach --name black-hat-md",
+    "start": "pm2 start index.js --name black-hat-md --watch",
     "stop": "pm2 stop black-hat-md",
-    "restart": "pm2 restart black-hat-md && pm2 logs",
+    "restart": "pm2 restart black-hat-md",
+    "logs": "pm2 logs black-hat-md",
+    "monit": "pm2 monit",
+    "delete": "pm2 delete black-hat-md",
     "stash": "git stash && git stash drop"
   },
   "keywords": [
@@ -31,6 +34,7 @@
     "body-parser": "latest",
     "buffer": "*",
     "dotenv": "*",
+    "canvacord": "*",
     "express": "^4.19.2",
     "ffmpeg-static": "*",
     "file-type": "17.1.6",

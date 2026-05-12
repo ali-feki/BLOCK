@@ -5,7 +5,7 @@ const { createContext } = require("./gmdHelpers");
 const { getSetting, getAllSettings } = require("./database/settings");
 const logger = require("gifted-baileys/lib/Utils/logger").default.child({});
 const { isJidGroup, downloadMediaMessage } = require("gifted-baileys");
-
+const { getGroupSetting } = require("../black_hat/database/groupSettings");
 
 
 const formatTime = (timestamp, timeZone = 'Africa/Nairobi') => {
@@ -1345,4 +1345,42 @@ const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
     }
 };
 
-module.exports = { logger, emojis, GiftedAutoReact, GiftedTechApi, GiftedApiKey, GiftedAntiLink, GiftedAntibad, GiftedAntiGroupMention, GiftedAutoBio, GiftedChatBot, GiftedAntiDelete, GiftedAnticall, GiftedPresence, GiftedAntiViewOnce, GiftedAntiEdit };
+async function antiStickerHandler(mek, Gifted) {
+  try {
+    const from = mek.key.remoteJid;
+
+    if (!from.endsWith("@g.us")) return;
+
+const raw = await getGroupSetting(from, "antisticker");
+
+const antiSticker =
+    raw === true ||
+    raw === "true" ||
+    raw === 1;
+
+if (antiSticker !== true) return;
+
+    const msg =
+      mek.message?.stickerMessage ||
+      mek.message?.ephemeralMessage?.message?.stickerMessage ||
+      mek.message?.viewOnceMessageV2?.message?.stickerMessage;
+
+    if (!msg) return;
+
+    const sender = mek.key.participant || mek.key.remoteJid;
+
+    await Gifted.sendMessage(from, {
+      delete: mek.key,
+    });
+
+    await Gifted.sendMessage(from, {
+      text: `🚫 @${sender.split("@")[0]} Stickers are not allowed here!`,
+      mentions: [sender],
+    });
+  } catch (err) {
+    console.error("AntiSticker Handler Error:", err);
+  }
+}
+
+
+module.exports = { logger, emojis, GiftedAutoReact, GiftedTechApi, GiftedApiKey, GiftedAntiLink, GiftedAntibad, GiftedAntiGroupMention, GiftedAutoBio, GiftedChatBot, GiftedAntiDelete, GiftedAnticall, GiftedPresence, GiftedAntiViewOnce, GiftedAntiEdit, antiStickerHandler };

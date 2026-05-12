@@ -3,6 +3,58 @@ const { getGroupSetting, setGroupSetting } = require("../black_hat/database/grou
 
 gmd(
   {
+    pattern: "antisticker",
+    react: "🛡️",
+    aliases: ["antistiker", "nosticker", "antist"],
+    category: "group",
+    description: "Enable or Disable Anti Sticker",
+  },
+  async (from, Gifted, conText) => {
+    const {
+      reply,
+      isBotAdmin,
+      isSuperUser,
+      isAdmin,
+      isSuperAdmin,
+      isGroup,
+      args,
+      sender,
+    } = conText;
+
+    if (!isGroup) {
+      return reply("❌ Group only command");
+    }
+
+    if (!isAdmin && !isSuperAdmin) {
+      const userNumber = sender.split("@")[0];
+      return reply(`@${userNumber} You are not an admin`, {
+        mentions: [`${userNumber}@s.whatsapp.net`],
+      });
+    }
+
+    const option = args[0]?.toLowerCase();
+
+    if (!option || (option !== "on" && option !== "off")) {
+      return reply("Usage:\n.antisticker on\n.antisticker off");
+    }
+
+    try {
+      if (option === "on") {
+        await setGroupSetting(from, "antisticker", true);
+        return reply("✅ Anti Sticker has been enabled");
+      } else {
+        await setGroupSetting(from, "antisticker", false);
+        return reply("❌ Anti Sticker has been disabled");
+      }
+    } catch (e) {
+      console.error("AntiSticker Error:", e);
+      return reply(`❌ Error: ${e.message}`);
+    }
+  },
+);
+
+gmd(
+  {
     pattern: "unmute",
     react: "⏳",
     aliases: ["open", "groupopen", "gcopen", "adminonly", "adminsonly"],

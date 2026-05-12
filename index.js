@@ -47,6 +47,7 @@ const {
     uploadToGiftedCdn,
     uploadToCatbox,
     GiftedAnticall,
+    antiStickerHandler,
     createContext,
     createContext2,
     verifyJidState,
@@ -407,6 +408,22 @@ function setupAntiDelete(Gifted) {
 
                 const actualMessage = getActualMessage(ms);
                 if (!actualMessage) continue;
+                
+                const from = key?.remoteJid;
+                if (!from) continue;
+                
+				const isGroup = from.endsWith("@g.us");
+                
+/* ✅ RUN ONLY IF MESSAGE IS STICKER */
+const isSticker =
+    ms.message?.stickerMessage ||
+    ms.message?.ephemeralMessage?.message?.stickerMessage ||
+    ms.message?.viewOnceMessageV2?.message?.stickerMessage;
+
+				/* 🚀 RUN ONLY IN GROUPS + STICKERS */
+				if (isGroup && isSticker) {
+    				await antiStickerHandler(ms, Gifted);
+				}
 
                 const sender = getSender(ms);
                 const senderPushName = getPushName(ms);
