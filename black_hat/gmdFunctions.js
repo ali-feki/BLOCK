@@ -163,7 +163,6 @@ async function toAudio(buffer) {
     return new Promise((resolve, reject) => {
       const { execFile } = require('child_process');
       
-      // First check if video has audio stream
       execFile(ffmpegPath, ['-i', input, '-hide_banner'], { timeout: 30000 }, (probeErr, probeOut, probeStderr) => {
         const hasAudio = probeStderr && (probeStderr.includes('Audio:') || probeStderr.includes('audio'));
         
@@ -362,8 +361,8 @@ async function formatVideo(buffer) {
         try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
         execFile(ffmpegPath, [
           '-y', '-i', inputPath,
-          '-map', '0:v:0',          // primary video stream only
-          '-map', '0:a:0?',         // primary audio stream (optional — skip if broken)
+          '-map', '0:v:0',
+          '-map', '0:a:0?',
           '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
           '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '44100',
           '-movflags', '+faststart', '-pix_fmt', 'yuv420p',
@@ -408,54 +407,174 @@ function formatBytes(bytes) {
   } else {
     return bytes.toFixed(2) + ' bytes';
   }
-    }
+}
+
+// ============================================================
+// loadSession — STARK-MD multi-format session loader
+// ============================================================
+//
+//  FORMAT 1 — MEGA:
+//    SESSION_ID = "STARK-MD_<megaFileId>"
+//    e.g.  STARK-MD_abc123XYZ
+//
+//  FORMAT 2 — Base64 gzip (pairing server output):
+//    SESSION_ID = "STARK-MD~<gzip+base64 of creds.json>"
+//
+//  FORMAT 3 — Pastebin / Paste.rs:
+//    SESSION_ID = "STARK-MD:pb:<pasteId>"   → pastebin.com/raw/<id>
+//    SESSION_ID = "STARK-MD:prs:<pasteId>"  → paste.rs/<id>
+//    SESSION_ID = "STARK-MD≈<pasteId>"      → pastebin legacy
+//
+// ============================================================
 
 async function loadSession() {
     try {
-        if (fs.existsSync(sessionDir)) {
-            const allFiles = fs.readdirSync(sessionDir);
-            allFiles.forEach(f => {
-                try { fs.unlinkSync(path.join(sessionDir, f)); } catch (e) {}
-            });
-        }
-
         if (!config.SESSION_ID || typeof config.SESSION_ID !== 'string') {
-            throw new Error("❌ SESSION_ID is missing or invalid");
+            throw new Error("SESSION_ID is missing or invalid");
         }
 
-        let sessionId = config.SESSION_ID;
-        const [headerCheck, b64Check] = sessionId.split('~');
+        const credsId = config.SESSION_ID.trim();
 
-        if (headerCheck !== "BlackHat" || !b64Check) {
-            throw new Error("❌ Invalid session format. Expected 'BlackHat~.....'");
-        }
-
-        if (!b64Check.startsWith('H4sI')) {
-            const serverUrl = `https://session.clevertechnexus.qzz.io/session/${b64Check}`;
-            const res = await axios.get(serverUrl, { timeout: 15000 });
-            const fetched = (res.data || '').toString().trim();
-            if (!fetched.startsWith('BlackHat~H4sI')) {
-                throw new Error("❌ Session server returned invalid data");
+        // Already loaded and valid — skip
+        if (fs.existsSync(sessionPath)) {
+            const existing = fs.readFileSync(sessionPath);
+            if (existing && existing.length > 100) {
+                console.log("ℹ️ Session already exists — skipping load");
+                return;
             }
-            sessionId = fetched;
+            // Corrupt/empty — delete and reload
+            fs.unlinkSync(sessionPath);
+            console.log("⚠️ Corrupt session found — reloading...");
         }
-
-        const [header, b64data] = sessionId.split('~');
-
-        if (header !== "BlackHat" || !b64data) {
-            throw new Error("❌ Invalid session format. Expected 'BlackHat~.....'");
-        }
-
-        const cleanB64 = b64data.replace('...', '');
-        const compressedData = Buffer.from(cleanB64, 'base64');
-        const decompressedData = zlib.gunzipSync(compressedData);
 
         if (!fs.existsSync(sessionDir)) {
             fs.mkdirSync(sessionDir, { recursive: true });
         }
 
-        fs.writeFileSync(sessionPath, decompressedData, "utf8");
-        console.log("✅ Session File Loaded");
+        // ── FORMAT 1: MEGA (STARK-MD_<megaId>) ───────────────
+        if (credsId.startsWith("STARK-MD_")) {
+            console.log("🕸️ FORMAT: MEGA — loading...");
+
+            const megaId = credsId.slice("STARK-MD_".length).trim();
+            if (!megaId) throw new Error("MEGA ID missing after STARK-MD_");
+
+            const { File } = require("megajs");
+            const file = File.fromURL(`https://mega.nz/file/${megaId}`);
+            await file.loadAttributes();
+
+            const data = await new Promise((res, rej) =>
+                file.download((e, d) => (e ? rej(e) : res(d)))
+            );
+
+            if (!data || data.length < 100)
+                throw new Error("MEGA download returned empty/invalid data");
+
+            fs.writeFileSync(sessionPath, data);
+            console.log("✅ MEGA session loaded");
+            return;
+        }
+
+        // ── FORMAT 2: BASE64 gzip (STARK-MD~<b64>) ───────────
+        // Pairing server sends: SESSION_PREFIX + b64data
+        // SESSION_PREFIX = "STARK-MD~", b64data = gzipSync(creds.json) → base64
+        if (credsId.startsWith("STARK-MD~")) {
+            console.log("🕸️ FORMAT: BASE64 — loading...");
+
+            const b64data = credsId.slice("STARK-MD~".length).trim();
+            if (!b64data) throw new Error("Base64 data missing after STARK-MD~");
+
+            let sessionData;
+            try {
+                // Pairing server uses zlib.gzipSync — decompress first
+                const compressed = Buffer.from(b64data, "base64");
+                sessionData = zlib.gunzipSync(compressed);
+                console.log("ℹ️ Base64: gzip decompressed OK");
+            } catch {
+                // Not gzipped — raw base64 encoded JSON
+                console.log("ℹ️ Base64: not gzipped, using raw decode");
+                sessionData = Buffer.from(b64data, "base64");
+            }
+
+            if (!sessionData || sessionData.length < 100)
+                throw new Error("Decoded session data is empty or too small");
+
+            // Must be valid JSON
+            try {
+                JSON.parse(sessionData.toString("utf8"));
+            } catch {
+                throw new Error("Decoded session is not valid JSON — invalid SESSION_ID");
+            }
+
+            fs.writeFileSync(sessionPath, sessionData);
+            console.log("✅ Base64 session loaded");
+            return;
+        }
+
+        // ── FORMAT 3: PASTEBIN / PASTE.RS ────────────────────
+        // STARK-MD:pb:<pasteId>  → pastebin.com
+        // STARK-MD:prs:<pasteId> → paste.rs
+        // STARK-MD≈<pasteId>     → pastebin legacy
+        if (credsId.startsWith("STARK-MD:") || credsId.startsWith("STARK-MD≈")) {
+            let source, pasteId;
+
+            if (credsId.startsWith("STARK-MD:")) {
+                const withoutPrefix = credsId.slice("STARK-MD:".length); // "pb:abc123"
+                const colonIdx = withoutPrefix.indexOf(":");
+                if (colonIdx === -1)
+                    throw new Error("Invalid format — expected STARK-MD:<pb|prs>:<pasteId>");
+                source  = withoutPrefix.slice(0, colonIdx).trim().toLowerCase();
+                pasteId = withoutPrefix.slice(colonIdx + 1).trim();
+            } else {
+                // Legacy: STARK-MD≈<pasteId>
+                source  = "pb";
+                pasteId = credsId.replace("STARK-MD≈", "").trim();
+            }
+
+            if (!pasteId) throw new Error("Paste ID is empty");
+            if (!["pb", "prs"].includes(source))
+                throw new Error(`Unknown paste source: "${source}" — use pb or prs`);
+
+            const url = source === "pb"
+                ? `https://pastebin.com/raw/${pasteId}`
+                : `https://paste.rs/${pasteId}`;
+
+            console.log(`🕸️ FORMAT: PASTE (${source.toUpperCase()}) — fetching...`);
+            await new Promise(r => setTimeout(r, 1200)); // race condition fix
+
+            const res = await axios.get(url, {
+                responseType: "text",
+                timeout: 15000,
+                headers: { "User-Agent": "Mozilla/5.0" },
+            });
+
+            let rawData = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+            rawData = rawData.trim();
+
+            if (!rawData || rawData.length < 100)
+                throw new Error(`Paste response too short — invalid paste ID: ${pasteId}`);
+
+            if (rawData.includes("Bad API request") || rawData.includes("Paste Not Found"))
+                throw new Error(`Paste not found or invalid: ${pasteId}`);
+
+            // Validate JSON
+            try {
+                JSON.parse(rawData);
+            } catch {
+                throw new Error("Paste content is not valid JSON — corrupt or wrong SESSION_ID");
+            }
+
+            fs.writeFileSync(sessionPath, rawData, "utf8");
+            console.log(`✅ Paste (${source.toUpperCase()}) session loaded`);
+            return;
+        }
+
+        throw new Error(
+            "Unsupported SESSION_ID format.\n" +
+            "  MEGA:     STARK-MD_<megaFileId>\n" +
+            "  Base64:   STARK-MD~<base64data>\n" +
+            "  Pastebin: STARK-MD:pb:<pasteId>\n" +
+            "  Paste.rs: STARK-MD:prs:<pasteId>"
+        );
 
     } catch (e) {
         console.error("❌ Session Error:", e.message);
@@ -606,7 +725,7 @@ const gmdBuffer = async (url, options = {}) => {
             },
             ...options,
             responseType: 'arraybuffer',
-            timeout: 2400000 // 24 mins😂
+            timeout: 2400000
         });
         
         if (!res.data || res.data.length === 0) {
@@ -630,7 +749,7 @@ const gmdJson = async (url, options = {}) => {
                 'Accept': 'application/json'
             },
             ...options,
-            timeout: 2400000 // 24 mins😂
+            timeout: 2400000
         });
         
         if (!res.data) {
@@ -725,8 +844,6 @@ class gmdStore {
                 const oldestChats = Array.from(this.messages.keys()).slice(0, chatsToDelete);
                 oldestChats.forEach(jid => this.messages.delete(jid));
             }
-            
-         //   console.log(`🧹 Store cleanup: ${this.messages.size} chats in memory`);
         } catch (error) {
             console.error('Store cleanup error:', error);
         }
