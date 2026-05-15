@@ -6,12 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "dev": "node index.js",
-    "start": "pm2 start index.js --name black-hat-md --watch",
+    "start": "pm2 start index.js --deep-monitoring --attach --name black-hat-md",
     "stop": "pm2 stop black-hat-md",
-    "restart": "pm2 restart black-hat-md",
-    "logs": "pm2 logs black-hat-md",
-    "monit": "pm2 monit",
-    "delete": "pm2 delete black-hat-md",
+    "restart": "pm2 restart black-hat-md && pm2 logs",
     "stash": "git stash && git stash drop"
   },
   "keywords": [
