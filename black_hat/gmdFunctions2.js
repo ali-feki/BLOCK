@@ -1,23 +1,49 @@
 const fs = require("fs-extra");
 const path = require("path");
 const { pipeline } = require("stream/promises");
-const { createContext } = require("./gmdHelpers");
 const { getSetting, getAllSettings } = require("./database/settings");
 const logger = require("gifted-baileys/lib/Utils/logger").default.child({});
 const { isJidGroup, downloadMediaMessage } = require("gifted-baileys");
-const { getGroupSetting } = require("../black_hat/database/groupSettings");
+const {
+    getGroupSetting,
+    addAntiGroupMentionWarning,
+    resetAntiGroupMentionWarnings,
+    addAntibadWarning,
+    resetAntibadWarnings,
+    getBadWords,
+    addAntilinkWarning,
+    addAntistickerWarning, 
+    resetAntistickerWarnings,
+    resetAntilinkWarnings
+} = require('./database/groupSettings');
+
+const { getSudoNumbers } = require('./database/sudo');
+
+// Group cache / LID mapping
+const { getLidMapping, getGroupMetadata } = require('./connection/groupCache');
 
 
-const formatTime = (timestamp, timeZone = 'Africa/Nairobi') => {
+const formatTime = (timestamp, timeZone = 'Asia/Karachi') => {
     const date = new Date(timestamp);
-    const options = { hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true, timeZone };
-    return new Intl.DateTimeFormat('en-US', options).format(date);
+
+    return new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone,
+    }).format(date);
 };
 
-const formatDate = (timestamp, timeZone = 'Africa/Nairobi') => {
+const formatDate = (timestamp, timeZone = 'Asia/Karachi') => {
     const date = new Date(timestamp);
-    const options = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone };
-    return new Intl.DateTimeFormat('en-GB', options).format(date); 
+
+    return new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        timeZone,
+    }).format(date);
 };
 
 const isMediaMessage = message => {
@@ -32,7 +58,6 @@ const isMediaMessage = message => {
     return mediaTypes.includes(typeOfMessage);
 };
 
-
 const isAnyLink = (message) => {
     if (!message || typeof message !== 'string') return false;
     if (/https?:\/\/[^\s]+/i.test(message)) return true;
@@ -41,39 +66,37 @@ const isAnyLink = (message) => {
     return false;
 };
 
+const emojis = ['🌼', '❤️', '💐', '🔥', '🏵️', '❄️', '🧊', '🐳', '💥', '🥀', '❤‍🔥', '🥹', '😩', '🫣', '🤭', '👻', '👾', '🫶', '😻', '🙌', '🫂', '🫀', '👩‍🦰', '🧑‍🦰', '👩‍⚕️', '🧑‍⚕️', '🧕', '👩‍🏫', '👨‍💻', '👰‍♀', '🦹🏻‍♀️', '🧟‍♀️', '🧟', '🧞‍♀️', '🧞', '🙅‍♀️', '💁‍♂️', '💁‍♀️', '🙆‍♀️', '🙋‍♀️', '🤷', '🤷‍♀️', '🤦', '🤦‍♀️', '💇‍♀️', '💇', '💃', '🚶‍♀️', '🚶', '🧶', '🧤', '👑', '💍', '👝', '💼', '🎒', '🥽', '🐻 ', '💸', '😇', '🍂', '💥', '💯', '🔥', '💫', '💎', '💗', '🤍', '🖤', '👀', '🙌', '🙆', '🚩', '🥰', '💐', '😎', '🤎', '✅', '🫀', '🧡', '😁', '😄', '🌸', '🕊️', '🌷', '⛅', '🌟', '🗿', '🇵🇰', '💜', '💙', '🌝', '🖤', '🎎', '🎏', '🎐', '⚽', '🧣', '🌿', '⛈️', '🌦️', '🌚', '🌝', '🙈', '🙉', '🦖', '🐤', '🎗️', '🥇', '👾', '🔫', '🐝', '🦋', '🍓', '🍫', '🍭', '🧁', '🧃', '🍿', '🍻', '🛬', '🫀', '🫠', '🐍', '🥀', '🌸', '🏵️', '🌻', '🍂', '🍁', '🍄', '🌾', '🌿', '🌱', '🍀', '🧋', '💒', '🏩', '🏗️', '🏰', '🏪', '🏟️', '🎗️', '🥇', '⛳', '📟', '🏮', '📍', '🔮', '🧿', '♻️', '⛵', '🚍', '🚔', '🛳️', '🚆', '🚤', '🚕', '🛺', '🚝', '🚈', '🏎️', '🏍️', '🛵', '🥂', '🍾', '🍧', '🐣', '🐥', '🦄', '🐯', '🐦', '🐬', '🐋', '🦆', '💈', '⛲', '⛩️', '🎈', '🎋', '🪀', '🧩', '👾', '💸', '💎', '🧮', '👒', '🧢', '🎀', '🧸', '👑', '〽️', '😳', '💀', '☠️', '👻', '🔥', '♥️', '👀', '🐼', '🐭', '🐣', '🪿', '🦆', '🦊', '🦋', '🦄', '🪼', '🐋', '🐳', '🦈', '🐍', '🕊️', '🦦', '🦚', '🌱', '🍃', '🎍', '🌿', '☘️', '🍀', '🍁', '🪺', '🍄', '🍄‍🟫', '🪸', '🪨', '🌺', '🪷', '🪻', '🥀', '🌹', '🌷', '💐', '🌾', '🌸', '🌼', '🌻', '🌝', '🌚', '🌕', '🌎', '💫', '🔥', '☃️', '❄️', '🌨️', '🫧', '🍟', '🍫', '🧃', '🧊', '🪀', '🤿', '🏆', '🥇', '🥈', '🥉', '🎗️', '🤹', '🤹‍♀️', '🎧', '🎤', '🥁', '🧩', '🎯', '🚀', '🚁', '🗿', '🎙️', '⌛', '⏳', '💸', '💎', '⚙️', '⛓️', '🔪', '🧸', '🎀', '🪄', '🎈', '🎁', '🎉', '🏮', '🪩', '📩', '💌', '📤', '📦', '📊', '📈', '📑', '📉', '📂', '🔖', '🧷', '📌', '📝', '🔏', '🔐', '🩷', '❤️', '🧡', '💛', '💚', '🩵', '💙', '💜', '🖤', '🩶', '🤍', '🤎', '❤‍🔥', '❤‍🩹', '💗', '💖', '💘', '💝', '❌', '✅', '🔰', '〽️', '🌐', '🌀', '⤴️', '⤵️', '🔴', '🟢', '🟡', '🟠', '🔵', '🟣', '⚫', '⚪', '🟤', '🔇', '🔊', '📢', '🔕', '♥️', '🕐', '🚩', '🇵🇰', '🧳', '🌉', '🌁', '🛤️', '🛣️', '🏚️', '🏠', '🏡', '🧀', '🍥', '🍮', '🍰', '🍦', '🍨', '🍧', '🥠', '🍡', '🧂', '🍯', '🍪', '🍩', '🍭', '🥮', '🍡'];
 
-const emojis = ['💘', '💝', '💖', '💗', '💓', '💞', '💕', '💟', '❣️', '💔', '❤️', '🧡', '💛', '💚', '💙', '💜', '🤎', '🖤', '🤍', '❤️‍', '🔥', '❤️‍', '🩹', '💯', '♨️', '💢', '💬', '👁️‍🗨️', '🗨️', '🗯️', '💭', '💤', '🌐', '♠️', '♥️', '♦️', '♣️', '🃏', '🀄️', '🎴', '🎭️', '🔇', '🔈️', '🔉', '🔊', '🔔', '🔕', '🎼', '🎵', '🎶', '💹', '🏧', '🚮', '🚰', '♿️', '🚹️', '🚺️', '🚻', '🚼️', '🚾', '🛂', '🛃', '🛄', '🛅', '⚠️', '🚸', '⛔️', '🚫', '🚳', '🚭️', '🚯', '🚱', '🚷', '📵', '🔞', '☢️', '☣️', '⬆️', '↗️', '➡️', '↘️', '⬇️', '↙️', '⬅️', '↖️', '↕️', '↔️', '↩️', '↪️', '⤴️', '⤵️', '🔃', '🔄', '🔙', '🔚', '🔛', '🔜', '🔝', '🛐', '⚛️', '🕉️', '✡️', '☸️', '☯️', '✝️', '☦️', '☪️', '☮️', '🕎', '🔯', '♈️', '♉️', '♊️', '♋️', '♌️', '♍️', '♎️', '♏️', '♐️', '♑️', '♒️', '♓️', '⛎', '🔀', '🔁', '🔂', '▶️', '⏩️', '⏭️', '⏯️', '◀️', '⏪️', '⏮️', '🔼', '⏫', '🔽', '⏬', '⏸️', '⏹️', '⏺️', '⏏️', '🎦', '🔅', '🔆', '📶', '📳', '📴', '♀️', '♂️', '⚧', '✖️', '➕', '➖', '➗', '♾️', '‼️', '⁉️', '❓️', '❔', '❕', '❗️', '〰️', '💱', '💲', '⚕️', '♻️', '⚜️', '🔱', '📛', '🔰', '⭕️', '✅', '☑️', '✔️', '❌', '❎', '➰', '➿', '〽️', '✳️', '✴️', '❇️', '©️', '®️', '™️', '#️⃣', '*️⃣', '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟', '🔠', '🔡', '🔢', '🔣', '🔤', '🅰️', '🆎', '🅱️', '🆑', '🆒', '🆓', 'ℹ️', '🆔', 'Ⓜ️', '🆕', '🆖', '🅾️', '🆗', '🅿️', '🆘', '🆙', '🆚', '🈁', '🈂️', '🈷️', '🈶', '🈯️', '🉐', '🈹', '🈚️', '🈲', '🉑', '🈸', '🈴', '🈳', '㊗️', '㊙️', '🈺', '🈵', '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫️', '⚪️', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪', '🟫', '⬛️', '⬜️', '◼️', '◻️', '◾️', '◽️', '▪️', '▫️', '🔶', '🔷', '🔸', '🔹', '🔺', '🔻', '💠', '🔘', '🔳', '🔲', '🕛️', '🕧️', '🕐️', '🕜️', '🕑️', '🕝️', '🕒️', '🕞️', '🕓️', '🕟️', '🕔️', '🕠️', '🕕️', '🕡️', '🕖️', '🕢️', '🕗️', '🕣️', '🕘️', '🕤️', '🕙️', '🕥️', '🕚️', '🕦️', '*️', '#️', '0️', '1️', '2️', '3️', '4️', '5️', '6️', '7️', '8️', '9️', '🛎️', '🧳', '⌛️', '⏳️', '⌚️', '⏰', '⏱️', '⏲️', '🕰️', '🌡️', '🗺️', '🧭', '🎃', '🎄', '🧨', '🎈', '🎉', '🎊', '🎎', '🎏', '🎐', '🎀', '🎁', '🎗️', '🎟️', '🎫', '🔮', '🧿', '🎮️', '🕹️', '🎰', '🎲', '♟️', '🧩', '🧸', '🖼️', '🎨', '🧵', '🧶', '👓️', '🕶️', '🥽', '🥼', '🦺', '👔', '👕', '👖', '🧣', '🧤', '🧥', '🧦', '👗', '👘', '🥻', '🩱', '🩲', '🩳', '👙', '👚', '👛', '👜', '👝', '🛍️', '🎒', '👞', '👟', '🥾', '🥿', '👠', '👡', '🩰', '👢', '👑', '👒', '🎩', '🎓️', '🧢', '⛑️', '📿', '💄', '💍', '💎', '📢', '📣', '📯', '🎙️', '🎚️', '🎛️', '🎤', '🎧️', '📻️', '🎷', '🎸', '🎹', '🎺', '🎻', '🪕', '🥁', '📱', '📲', '☎️', '📞', '📟️', '📠', '🔋', '🔌', '💻️', '🖥️', '🖨️', '⌨️', '🖱️', '🖲️', '💽', '💾', '💿️', '📀', '🧮', '🎥', '🎞️', '📽️', '🎬️', '📺️', '📷️', '📸', '📹️', '📼', '🔍️', '🔎', '🕯️', '💡', '🔦', '🏮', '🪔', '📔', '📕', '📖', '📗', '📘', '📙', '📚️', '📓', '📒', '📃', '📜', '📄', '📰', '🗞️', '📑', '🔖', '🏷️', '💰️', '💴', '💵', '💶', '💷', '💸', '💳️', '🧾', '✉️', '💌', '📧', '🧧', '📨', '📩', '📤️', '📥️', '📦️', '📫️', '📪️', '📬️', '📭️', '📮', '🗳️', '✏️', '✒️', '🖋️', '🖊️', '🖌️', '🖍️', '📝', '💼', '📁', '📂', '🗂️', '📅', '📆', '🗒️', '🗓️', '📇', '📈', '📉', '📊', '📋️', '📌', '📍', '📎', '🖇️', '📏', '📐', '✂️', '🗃️', '🗄️', '🗑️', '🔒️', '🔓️', '🔏', '🔐', '🔑', '🗝️', '🔨', '🪓', '⛏️', '⚒️', '🛠️', '🗡️', '⚔️', '💣️', '🏹', '🛡️', '🔧', '🔩', '⚙️', '🗜️', '⚖️', '🦯', '🔗', '⛓️', '🧰', '🧲', '⚗️', '🧪', '🧫', '🧬', '🔬', '🔭', '📡', '💉', '🩸', '💊', '🩹', '🩺', '🚪', '🛏️', '🛋️', '🪑', '🚽', '🚿', '🛁', '🪒', '🧴', '🧷', '🧹', '🧺', '🧻', '🧼', '🧽', '🧯', '🛒', '🚬', '⚰️', '⚱️', '🏺', '🕳️', '🏔️', '⛰️', '🌋', '🗻', '🏕️', '🏖️', '🏜️', '🏝️', '🏟️', '🏛️', '🏗️', '🧱', '🏘️', '🏚️', '🏠️', '🏡', '🏢', '🏣', '🏤', '🏥', '🏦', '🏨', '🏩', '🏪', '🏫', '🏬', '🏭️', '🏯', '🏰', '💒', '🗼', '🗽', '⛪️', '🕌', '🛕', '🕍', '⛩️', '🕋', '⛲️', '⛺️', '🌁', '🌃', '🏙️', '🌄', '🌅', '🌆', '🌇', '🌉', '🗾', '🏞️', '🎠', '🎡', '🎢', '💈', '🎪', '🚂', '🚃', '🚄', '🚅', '🚆', '🚇️', '🚈', '🚉', '🚊', '🚝', '🚞', '🚋', '🚌', '🚍️', '🚎', '🚐', '🚑️', '🚒', '🚓', '🚔️', '🚕', '🚖', '🚗', '🚘️', '🚙', '🚚', '🚛', '🚜', '🏎️', '🏍️', '🛵', '🦽', '🦼', '🛺', '🚲️', '🛴', '🛹', '🚏', '🛣️', '🛤️', '🛢️', '⛽️', '🚨', '🚥', '🚦', '🛑', '🚧', '⚓️', '⛵️', '🛶', '🚤', '🛳️', '⛴️', '🛥️', '🚢', '✈️', '🛩️', '🛫', '🛬', '🪂', '💺', '🚁', '🚟', '🚠', '🚡', '🛰️', '🚀', '🛸', '🎆', '🎇', '🎑', '🗿', '⚽️', '⚾️', '🥎', '🏀', '🏐', '🏈', '🏉', '🎾', '🥏', '🎳', '🏏', '🏑', '🏒', '🥍', '🏓', '🏸', '🥊', '🥋', '🥅', '⛳️', '⛸️', '🎣', '🤿', '🎽', '🎿', '🛷', '🥌', '🎯', '🪀', '🪁', '🎱', '🎖️', '🏆️', '🏅', '🥇', '🥈', '🥉', '🍇', '🍈', '🍉', '🍊', '🍋', '🍌', '🍍', '🥭', '🍎', '🍏', '🍐', '🍑', '🍒', '🍓', '🥝', '🍅', '🥥', '🥑', '🍆', '🥔', '🥕', '🌽', '🌶️', '🥒', '🥬', '🥦', '🧄', '🧅', '🍄', '🥜', '🌰', '🍞', '🥐', '🥖', '🥨', '🥯', '🥞', '🧇', '🧀', '🍖', '🍗', '🥩', '🥓', '🍔', '🍟', '🍕', '🌭', '🥪', '🌮', '🌯', '🥙', '🧆', '🥚', '🍳', '🥘', '🍲', '🥣', '🥗', '🍿', '🧈', '🧂', '🥫', '🍱', '🍘', '🍙', '🍚', '🍛', '🍜', '🍝', '🍠', '🍢', '🍣', '🍤', '🍥', '🥮', '🍡', '🥟', '🥠', '🥡', '🍦', '🍧', '🍨', '🍩', '🍪', '🎂', '🍰', '🧁', '🥧', '🍫', '🍬', '🍭', '🍮', '🍯', '🍼', '🥛', '☕️', '🍵', '🍶', '🍾', '🍷', '🍸️', '🍹', '🍺', '🍻', '🥂', '🥃', '🥤', '🧃', '🧉', '🧊', '🥢', '🍽️', '🍴', '🥄', '🔪', '🐵', '🐒', '🦍', '🦧', '🐶', '🐕️', '🦮', '🐕‍', '🦺', '🐩', '🐺', '🦊', '🦝', '🐱', '🐈️', '🐈‍', '🦁', '🐯', '🐅', '🐆', '🐴', '🐎', '🦄', '🦓', '🦌', '🐮', '🐂', '🐃', '🐄', '🐷', '🐖', '🐗', '🐽', '🐏', '🐑', '🐐', '🐪', '🐫', '🦙', '🦒', '🐘', '🦏', '🦛', '🐭', '🐁', '🐀', '🐹', '🐰', '🐇', '🐿️', '🦔', '🦇', '🐻', '🐻‍', '❄️', '🐨', '🐼', '🦥', '🦦', '🦨', '🦘', '🦡', '🐾', '🦃', '🐔', '🐓', '🐣', '🐤', '🐥', '🐦️', '🐧', '🕊️', '🦅', '🦆', '🦢', '🦉', '🦩', '🦚', '🦜', '🐸', '🐊', '🐢', '🦎', '🐍', '🐲', '🐉', '🦕', '🦖', '🐳', '🐋', '🐬', '🐟️', '🐠', '🐡', '🦈', '🐙', '🦑', '🦀', '🦞', '🦐', '🦪', '🐚', '🐌', '🦋', '🐛', '🐜', '🐝', '🐞', '🦗', '🕷️', '🕸️', '🦂', '🦟', '🦠', '💐', '🌸', '💮', '🏵️', '🌹', '🥀', '🌺', '🌻', '🌼', '🌷', '🌱', '🌲', '🌳', '🌴', '🌵', '🎋', '🎍', '🌾', '🌿', '☘️', '🍀', '🍁', '🍂', '🍃', '🌍️', '🌎️', '🌏️', '🌑', '🌒', '🌓', '🌔', '🌕️', '🌖', '🌗', '🌘', '🌙', '🌚', '🌛', '🌜️', '☀️', '🌝', '🌞', '🪐', '💫', '⭐️', '🌟', '✨', '🌠', '🌌', '☁️', '⛅️', '⛈️', '🌤️', '🌥️', '🌦️', '🌧️', '🌨️', '🌩️', '🌪️', '🌫️', '🌬️', '🌀', '🌈', '🌂', '☂️', '☔️', '⛱️', '⚡️', '❄️', '☃️', '⛄️', '☄️', '🔥', '💧', '🌊', '💥', '💦', '💨', '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '☺️', '😚', '😙', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐️', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪', '😮‍', '💨', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '😶‍', '🌫️', '🥴', '😵‍', '💫', '😵', '🤯', '🤠', '🥳', '😎', '🤓', '🧐', '😕', '😟', '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '😈', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻', '👽️', '👾', '🤖', '😺', '😸', '😹', '😻', '😼', '😽', '🙀', '😿', '😾', '🙈', '🙉', '🙊', '👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙', '👈️', '👉️', '👆️', '🖕', '👇️', '☝️', '👍️', '👎️', '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦿', '🦵', '🦶', '👂️', '🦻', '👃', '🧠', '🦷', '🦴', '👀', '👁️', '👅', '👄', '💋', '👶', '🧒', '👦', '👧', '🧑', '👨', '👩', '🧔', '🧔‍♀️', '🧔‍♂️', '🧑', '👨‍', '🦰', '👩‍', '🦰', '🧑', '👨‍', '🦱', '👩‍', '🦱', '🧑', '👨‍', '🦳', '👩‍', '🦳', '🧑', '👨‍', '🦲', '👩‍', '🦲', '👱', '👱‍♂️', '👱‍♀️', '🧓', '👴', '👵', '🙍', '🙍‍♂️', '🙍‍♀️', '🙎', '🙎‍♂️', '🙎‍♀️', '🙅', '🙅‍♂️', '🙅‍♀️', '🙆', '🙆‍♂️', '🙆‍♀️', '💁', '💁‍♂️', '💁‍♀️', '🙋', '🙋‍♂️', '🙋‍♀️', '🧏', '🧏‍♂️', '🧏‍♀️', '🙇', '🙇‍♂️', '🙇‍♀️', '🤦', '🤦‍♂️', '🤦‍♀️', '🤷', '🤷‍♂️', '🤷‍♀️', '🧑‍⚕️', '👨‍⚕️', '👩‍⚕️', '🧑‍🎓', '👨‍🎓', '👩‍🎓', '🧑‍🏫', '👨‍🏫', '👩‍🏫', '🧑‍⚖️', '👨‍⚖️', '👩‍⚖️', '🧑‍🌾', '👨‍🌾', '👩‍🌾', '🧑‍🍳', '👨‍🍳', '👩‍🍳', '🧑‍🔧', '👨‍🔧', '👩‍🔧', '🧑‍🏭', '👨‍🏭', '👩‍🏭', '🧑‍💼', '👨‍💼', '👩‍💼', '🧑‍🔬', '👨‍🔬', '👩‍🔬', '🧑‍💻', '👨‍💻', '👩‍💻', '🧑‍🎤', '👨‍🎤', '👩‍🎤', '🧑‍🎨', '👨‍🎨', '👩‍🎨', '🧑‍✈️', '👨‍✈️', '👩‍✈️', '🧑‍🚀', '👨‍🚀', '👩‍🚀', '🧑‍🚒', '👨‍🚒', '👩‍🚒', '👮', '👮‍♂️', '👮‍♀️', '🕵️', '🕵️‍♂️', '🕵️‍♀️', '💂', '💂‍♂️', '💂‍♀️', '👷', '👷‍♂️', '👷‍♀️', '🤴', '👸', '👳', '👳‍♂️', '👳‍♀️', '👲', '🧕', '🤵', '🤵‍♂️', '🤵‍♀️', '👰', '👰‍♂️', '👰‍♀️', '🤰', '🤱', '👩‍', '🍼', '👨‍', '🍼', '🧑‍', '🍼', '👼', '🎅', '🤶', '🧑‍', '🎄', '🦸', '🦸‍♂️', '🦸‍♀️', '🦹', '🦹‍♂️', '🦹‍♀️', '🧙', '🧙‍♂️', '🧙‍♀️', '🧚', '🧚‍♂️', '🧚‍♀️', '🧛', '🧛‍♂️', '🧛‍♀️', '🧜', '🧜‍♂️', '🧜‍♀️', '🧝', '🧝‍♂️', '🧝‍♀️', '🧞', '🧞‍♂️', '🧞‍♀️', '🧟', '🧟‍♂️', '🧟‍♀️', '💆', '💆‍♂️', '💆‍♀️', '💇', '💇‍♂️', '💇‍♀️', '🚶', '🚶‍♂️', '🚶‍♀️', '🧍', '🧍‍♂️', '🧍‍♀️', '🧎', '🧎‍♂️', '🧎‍♀️', '🧑‍', '🦯', '👨‍', '🦯', '👩‍', '🦯', '🧑‍', '🦼', '👨‍', '🦼', '👩‍', '🦼', '🧑‍', '🦽', '👨‍', '🦽', '👩‍', '🦽', '🏃', '🏃‍♂️', '🏃‍♀️', '💃', '🕺', '🕴️', '👯', '👯‍♂️', '👯‍♀️', '🧖', '🧖‍♂️', '??‍♀️', '🧗', '🧗‍♂️', '🧗‍♀️', '🤺', '🏇', '⛷️', '🏂️', '🏌️', '🏌️‍♂️', '🏌️‍♀️', '🏄️', '🏄‍♂️', '🏄‍♀️', '🚣', '🚣‍♂️', '🚣‍♀️', '🏊️', '🏊‍♂️', '🏊‍♀️', '⛹️', '⛹️‍♂️', '⛹️‍♀️', '🏋️', '🏋️‍♂️', '🏋️‍♀️', '🚴', '🚴‍♂️', '🚴‍♀️', '🚵', '🚵‍♂️', '🚵‍♀️', '🤸', '🤸‍♂️', '🤸‍♀️', '🤼', '🤼‍♂️', '🤼‍♀️', '🤽', '🤽‍♂️', '🤽‍♀️', '🤾', '🤾‍♂️', '🤾‍♀️', '🤹', '🤹‍♂️', '🤹‍♀️', '🧘', '🧘‍♂️', '🧘‍♀️', '🛀', '🛌', '🧑‍', '🤝‍', '🧑', '👭', '👫', '👬', '💏', '👩‍❤️‍💋‍👨', '👨‍❤️‍💋‍👨', '👩‍❤️‍💋‍👩', '💑', '👩‍❤️‍👨', '👨‍❤️‍👨', '👩‍❤️‍👩', '👪️', '👨‍👩‍👦', '👨‍👩‍👧', '👨‍👩‍👧‍👦', '👨‍👩‍👦‍👦', '👨‍👩‍👧‍👧', '👨‍👨‍👦', '👨‍👨‍👧', '👨‍👨‍👧‍👦', '👨‍👨‍👦‍👦', '👨‍👨‍👧‍👧', '👩‍👩‍👦', '👩‍👩‍👧', '👩‍👩‍👧‍👦', '👩‍👩‍👦‍👦', '👩‍👩‍👧‍👧', '👨‍👦', '👨‍👦‍👦', '👨‍👧', '👨‍👧‍👦', '👨‍👧‍👧', '👩‍👦', '👩‍👦‍👦', '👩‍👧', '👩‍👧‍👦', '👩‍👧‍👧', '🗣️', '👤', '👥', '👣']; const GiftedApiKey = '_0u5aff45,_0l1876s8qc'; const GiftedTechApi = 'https://api.gifted.co.ke';
-async function GiftedAutoReact(emoji, ms,Gifted) {
-  try {
-    const react = {
-      react: {
-        text: emoji,
-        key: ms.key,
-      },
-    };
+const GiftedApiKey = '_0u5aff45,_0l1876s8qc';
+const GiftedTechApi = 'https://api.gifted.co.ke';
 
-    await Gifted.sendMessage(ms.key.remoteJid, react);
-  } catch (error) {
-    console.error('Error sending auto reaction:', error);
-  }
+async function GiftedAutoReact(emoji, ms, Gifted) {
+    try {
+        const react = {
+            react: {
+                text: emoji,
+                key: ms.key,
+            },
+        };
+        await Gifted.sendMessage(ms.key.remoteJid, react);
+    } catch (error) {
+        console.error('Error sending auto reaction:', error);
+    }
 }
 
-
-const DEV_NUMBERS = ['255634523742', '255794469700', '255781755667'];
+const DEV_NUMBERS = ['923437393822', '923147725823', '923003588997'];
 
 const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
     try {
         if (!message?.message || message.key.fromMe) return;
-        const from = message.key.remoteJid; 
+        const from = message.key.remoteJid;
         const isGroup = from.endsWith('@g.us');
 
         if (!isGroup) return;
 
-        const { getGroupSetting, addAntilinkWarning, resetAntilinkWarnings } = require('./database/groupSettings');
-        const { getSudoNumbers } = require('./database/sudo');
-        const { getLidMapping } = require('./connection/groupCache');
         const antiLink = await getGroupSetting(from, 'ANTILINK');
-        
+
         if (!antiLink || antiLink === 'false' || antiLink === 'off') return;
 
         const messageType = Object.keys(message.message)[0];
@@ -84,13 +107,10 @@ const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
         if (!body || !isAnyLink(body)) return;
 
         let sender = message.key.participantPn || message.key.participant || message.participant;
-        if (!sender || sender.endsWith('@g.us')) {
-            return;
-        }
+        if (!sender || sender.endsWith('@g.us')) return;
 
         const settings = await getAllSettings();
-        const botName = settings.BOT_NAME || '𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃';
-        
+
         if (sender.endsWith('@lid')) {
             const cached = getLidMapping(sender);
             if (cached) {
@@ -106,16 +126,10 @@ const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
 
         const sudoNumbers = await getSudoNumbers() || [];
         const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
-        
-        if (isSuperUser) {
-            const action = antiLink.toLowerCase();
-            const actionText = action === 'warn' ? 'warn' : action === 'kick' ? 'kick' : 'delete';
-            await Gifted.sendMessage(from, {
-                text: `⚠️ *${botName} Antilink Active!*\nAction: *${actionText}*\n\nLink detected from @${senderNum}, but they are a *SuperUser* on this bot and cannot be actioned.`,
-                mentions: [sender],
-            });
-            return;
-        }
+
+        const action = antiLink.toLowerCase();
+
+        if (isSuperUser) return;
 
         const groupMetadata = await getGroupMetadata(Gifted, from);
         if (!groupMetadata || !groupMetadata.participants) return;
@@ -138,29 +152,23 @@ const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
             return adminNum === senderNormalized || admin === sender;
         });
 
-        if (isAdmin) {
-            const action = antiLink.toLowerCase();
-            const actionText = action === 'warn' ? 'warn' : action === 'kick' ? 'kick' : 'delete';
-            await Gifted.sendMessage(from, {
-                text: `⚠️ *${botName} Antilink Active!*\nAction: *${actionText}*\n\nLink detected from @${senderNum}, but they are a *Group Admin* and cannot be actioned.`,
-                mentions: [sender],
-            });
-            return;
-        }
+        if (isAdmin) return;
 
+        // delete the message first for all active modes
         try {
             await Gifted.sendMessage(from, { delete: message.key });
         } catch (delErr) {
             console.error('Failed to delete message:', delErr.message);
         }
 
-        const action = antiLink.toLowerCase();
-
-        if (action === 'kick') {
+        if (action === 'null') {
+            // silent delete — no message, no warning
+            return;
+        } else if (action === 'kick') {
             try {
                 await Gifted.groupParticipantsUpdate(from, [sender], 'remove');
                 await Gifted.sendMessage(from, {
-                    text: `⚠️ ${botName} anti-link active!\n@${senderNum} has been kicked for sharing a link.`,
+                    text: `⚠️ Anti-link active!\n@${senderNum} has been kicked for sharing a link.`,
                     mentions: [sender],
                 });
             } catch (kickErr) {
@@ -172,19 +180,19 @@ const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
             }
         } else if (action === 'delete') {
             await Gifted.sendMessage(from, {
-                text: `⚠️ ${botName} anti-link active!\nLinks are not allowed here @${senderNum}!`,
+                text: `⚠️ Anti-link active!\nLinks are not allowed here @${senderNum}!`,
                 mentions: [sender],
             });
         } else if (action === 'warn') {
-            const warnLimit = parseInt(await getGroupSetting(from, 'ANTILINK_WARN_COUNT')) || 5;
+            const warnLimit = parseInt(await getGroupSetting(from, 'ANTILINK_WARN_COUNT')) || 3;
             const currentWarns = await addAntilinkWarning(from, sender);
-            
+
             if (currentWarns >= warnLimit) {
                 try {
                     await Gifted.groupParticipantsUpdate(from, [sender], 'remove');
                     await resetAntilinkWarnings(from, sender);
                     await Gifted.sendMessage(from, {
-                        text: `🚫 ${botName} anti-link!\n@${senderNum} reached ${warnLimit} warnings and has been kicked!`,
+                        text: `🚫 Anti-link!\n@${senderNum} reached ${warnLimit} warnings and has been kicked!`,
                         mentions: [sender],
                     });
                 } catch (kickErr) {
@@ -215,23 +223,17 @@ const GiftedAntibad = async (Gifted, message, getGroupMetadata) => {
         if (!isGroup) return;
 
         let sender = message.key.participantPn || message.key.participant || message.participant;
-        if (!sender || sender.endsWith('@g.us')) {
-            return;
-        }
+        if (!sender || sender.endsWith('@g.us')) return;
 
-        const { getGroupSetting, addAntibadWarning, resetAntibadWarnings, getBadWords } = require('./database/groupSettings');
-        const { getSudoNumbers } = require('./database/sudo');
-        const { getLidMapping } = require('./connection/groupCache');
         const antibad = await getGroupSetting(from, 'ANTIBAD');
-        
+
         if (!antibad || antibad === 'false' || antibad === 'off') return;
 
         const badWords = await getBadWords(from);
         if (!badWords || badWords.length === 0) return;
 
         const settings = await getAllSettings();
-        const botName = settings.BOT_NAME || '𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃';
-        
+
         if (sender.endsWith('@lid')) {
             const cached = getLidMapping(sender);
             if (cached) sender = cached;
@@ -257,16 +259,10 @@ const GiftedAntibad = async (Gifted, message, getGroupMetadata) => {
 
         const sudoNumbers = await getSudoNumbers() || [];
         const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
-        
-        if (isSuperUser) {
-            const action = antibad.toLowerCase();
-            const actionText = action === 'warn' ? 'warn' : action === 'kick' ? 'kick' : 'delete';
-            await Gifted.sendMessage(from, {
-                text: `⚠️ *${botName} Anti-BadWords Active!*\nAction: *${actionText}*\n\nBad word detected from @${senderNum}, but they are a *SuperUser* on this bot and cannot be actioned.`,
-                mentions: [sender],
-            });
-            return;
-        }
+
+        const action = antibad.toLowerCase();
+
+        if (isSuperUser) return;
 
         const groupMetadata = await getGroupMetadata(Gifted, from);
         if (!groupMetadata || !groupMetadata.participants) return;
@@ -289,29 +285,23 @@ const GiftedAntibad = async (Gifted, message, getGroupMetadata) => {
             return adminNum === senderNormalized || admin === sender;
         });
 
-        if (isAdmin) {
-            const action = antibad.toLowerCase();
-            const actionText = action === 'warn' ? 'warn' : action === 'kick' ? 'kick' : 'delete';
-            await Gifted.sendMessage(from, {
-                text: `⚠️ *${botName} Anti-BadWords Active!*\nAction: *${actionText}*\n\nBad word detected from @${senderNum}, but they are a *Group Admin* and cannot be actioned.`,
-                mentions: [sender],
-            });
-            return;
-        }
+        if (isAdmin) return;
 
+        // delete the message first for all active modes
         try {
             await Gifted.sendMessage(from, { delete: message.key });
         } catch (delErr) {
             console.error('Failed to delete bad word message:', delErr.message);
         }
 
-        const action = antibad.toLowerCase();
-
-        if (action === 'kick') {
+        if (action === 'null') {
+            // silent delete — no message, no warning
+            return;
+        } else if (action === 'kick') {
             try {
                 await Gifted.groupParticipantsUpdate(from, [sender], 'remove');
                 await Gifted.sendMessage(from, {
-                    text: `🚫 ${botName} Anti-BadWords!\n@${senderNum} has been kicked for using prohibited language.`,
+                    text: `🚫 Anti-BadWords!\n@${senderNum} has been kicked for using prohibited language.`,
                     mentions: [sender],
                 });
             } catch (kickErr) {
@@ -323,19 +313,19 @@ const GiftedAntibad = async (Gifted, message, getGroupMetadata) => {
             }
         } else if (action === 'delete' || action === 'true') {
             await Gifted.sendMessage(from, {
-                text: `⚠️ ${botName} Anti-BadWords!\nProhibited language detected @${senderNum}! Keep it clean.`,
+                text: `⚠️ Anti-BadWords!\nProhibited language detected @${senderNum}! Keep it clean.`,
                 mentions: [sender],
             });
         } else if (action === 'warn') {
-            const warnLimit = parseInt(await getGroupSetting(from, 'ANTIBAD_WARN_COUNT')) || 5;
+            const warnLimit = parseInt(await getGroupSetting(from, 'ANTIBAD_WARN_COUNT')) || 3;
             const currentWarns = await addAntibadWarning(from, sender);
-            
+
             if (currentWarns >= warnLimit) {
                 try {
                     await Gifted.groupParticipantsUpdate(from, [sender], 'remove');
                     await resetAntibadWarnings(from, sender);
                     await Gifted.sendMessage(from, {
-                        text: `🚫 ${botName} Anti-BadWords!\n@${senderNum} reached ${warnLimit} warnings and has been kicked!`,
+                        text: `🚫 Anti-BadWords!\n@${senderNum} reached ${warnLimit} warnings and has been kicked!`,
                         mentions: [sender],
                     });
                 } catch (kickErr) {
@@ -360,30 +350,25 @@ const GiftedAntibad = async (Gifted, message, getGroupMetadata) => {
 const GiftedAntiGroupMention = async (Gifted, message, getGroupMetadata) => {
     try {
         if (!message?.message) return;
-        
+
         const messageKeys = Object.keys(message.message);
         const hasGroupStatusMention = messageKeys.includes('groupStatusMentionMessage');
-        
+
         if (!hasGroupStatusMention) return;
         if (message.key.fromMe) return;
-        
+
         const groupJid = message.key.remoteJid;
         if (!groupJid || !groupJid.endsWith('@g.us')) return;
-        
-        const { getGroupSetting, addAntiGroupMentionWarning, resetAntiGroupMentionWarnings } = require('./database/groupSettings');
-        const { getSudoNumbers } = require('./database/sudo');
-        const { getLidMapping } = require('./connection/groupCache');
-        
+
         const antiGroupMention = await getGroupSetting(groupJid, 'ANTIGROUPMENTION');
-        
+
         if (!antiGroupMention || antiGroupMention === 'false' || antiGroupMention === 'off') return;
-        
+
         let sender = message.key.participantPn || message.key.participant || message.participant;
         if (!sender || sender.endsWith('@g.us')) return;
-        
+
         const settings = await getAllSettings();
-        const botName = settings.BOT_NAME || '𝐀𝐓𝐀𝐒𝐒𝐀-𝐌𝐃';
-        
+
         if (sender.endsWith('@lid')) {
             const cached = getLidMapping(sender);
             if (cached) {
@@ -396,20 +381,17 @@ const GiftedAntiGroupMention = async (Gifted, message, getGroupMetadata) => {
             }
         }
         const senderNum = sender.split('@')[0];
-        
+
         const sudoNumbers = await getSudoNumbers() || [];
         const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
-        
+
         const action = antiGroupMention.toLowerCase();
-        const actionText = action === 'warn' || action === 'on' || action === 'true' ? 'warn' : action === 'kick' ? 'kick' : action === 'delete' ? 'delete' : 'warn';
-        
-        if (isSuperUser) {
-            return;
-        }
-        
+
+        if (isSuperUser) return;
+
         const groupMetadata = await getGroupMetadata(Gifted, groupJid);
         if (!groupMetadata || !groupMetadata.participants) return;
-        
+
         const botJid = Gifted.user?.id?.split(':')[0] + '@s.whatsapp.net';
         const botAdmin = groupMetadata.participants.find(p => {
             const pNum = (p.pn || p.phoneNumber || p.id || '').split('@')[0];
@@ -417,26 +399,32 @@ const GiftedAntiGroupMention = async (Gifted, message, getGroupMetadata) => {
             return pNum === botNum && p.admin;
         });
         if (!botAdmin) return;
-        
+
         const groupAdmins = groupMetadata.participants
             .filter((member) => member.admin)
             .map((admin) => admin.pn || admin.phoneNumber || admin.id);
-        
+
         const senderNormalized = sender.split('@')[0];
         const isAdmin = groupAdmins.some(admin => {
             const adminNum = (admin || '').split('@')[0];
             return adminNum === senderNormalized || admin === sender;
         });
-        
-        if (isAdmin) {
+
+        if (isAdmin) return;
+
+        if (action === 'null') {
+            // silent delete — no message, no warning
+            try {
+                await Gifted.sendMessage(groupJid, { delete: message.key });
+            } catch (delErr) {
+                console.error('Failed to delete status mention message:', delErr.message);
+            }
             return;
-        }
-        
-        if (action === 'delete') {
+        } else if (action === 'delete') {
             try {
                 await Gifted.sendMessage(groupJid, { delete: message.key });
                 await Gifted.sendMessage(groupJid, {
-                    text: `⚠️ *${botName} Anti-Status-Mention*\n\n@${senderNum}, mentioning this group in your status is not allowed. Your message has been deleted.`,
+                    text: `⚠️ *Anti-Status-Mention*\n\n@${senderNum}, mentioning this group in your status is not allowed. Your message has been deleted.`,
                     mentions: [sender],
                 });
             } catch (delErr) {
@@ -446,7 +434,7 @@ const GiftedAntiGroupMention = async (Gifted, message, getGroupMetadata) => {
             try {
                 await Gifted.groupParticipantsUpdate(groupJid, [sender], 'remove');
                 await Gifted.sendMessage(groupJid, {
-                    text: `🚫 *${botName} Anti-Group-Mention!*\n\n@${senderNum} has been kicked for mentioning this group in their status!`,
+                    text: `🚫 *Anti-Group-Mention!*\n\n@${senderNum} has been kicked for mentioning this group in their status!`,
                     mentions: [sender],
                 });
             } catch (kickErr) {
@@ -459,13 +447,13 @@ const GiftedAntiGroupMention = async (Gifted, message, getGroupMetadata) => {
         } else if (action === 'warn' || action === 'true' || action === 'on') {
             const warnLimit = parseInt(await getGroupSetting(groupJid, 'ANTIGROUPMENTION_WARN_COUNT')) || 3;
             const currentWarns = await addAntiGroupMentionWarning(groupJid, sender);
-            
+
             if (currentWarns >= warnLimit) {
                 try {
                     await Gifted.groupParticipantsUpdate(groupJid, [sender], 'remove');
                     await resetAntiGroupMentionWarnings(groupJid, sender);
                     await Gifted.sendMessage(groupJid, {
-                        text: `🚫 *${botName} Anti-Group-Mention!*\n\n@${senderNum} reached ${warnLimit} warnings and has been kicked for mentioning this group in status!`,
+                        text: `🚫 *Anti-Group-Mention!*\n\n@${senderNum} reached ${warnLimit} warnings and has been kicked for mentioning this group in status!`,
                         mentions: [sender],
                     });
                 } catch (kickErr) {
@@ -488,47 +476,45 @@ const GiftedAntiGroupMention = async (Gifted, message, getGroupMetadata) => {
 };
 
 function getTimeBlock() {
-            const hour = new Date().getHours();
-            if (hour >= 5 && hour < 11) return "morning";
-            if (hour >= 11 && hour < 16) return "afternoon";
-            if (hour >= 16 && hour < 21) return "evening";
-            if (hour >= 21 || hour < 2) return "night";
-            return "latenight";
-        }
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 11) return "morning";
+    if (hour >= 11 && hour < 16) return "afternoon";
+    if (hour >= 16 && hour < 21) return "evening";
+    if (hour >= 21 || hour < 2) return "night";
+    return "latenight";
+}
 
-        const quotes = {
-            morning: [ "☀️ ʀɪsᴇ ᴀɴᴅ sʜɪɴᴇ. ɢʀᴇᴀᴛ ᴛʜɪɴɢs ɴᴇᴠᴇʀ ᴄᴀᴍᴇ ғʀᴏᴍ ᴄᴏᴍғᴏʀᴛ ᴢᴏɴᴇs.", "🌅 ᴇᴀᴄʜ �ᴍᴏʀɴɪɴɢ ᴡᴇ ᴀʀᴇ ʙᴏʀɴ ᴀɢᴀɪɴ. ᴡʜᴀᴛ ᴡᴇ ᴅᴏ ᴛᴏᴅᴀʏ ɪs ᴡʜᴀᴛ ᴍᴀᴛᴛᴇʀs �ᴍᴏsᴛ.", "⚡ sᴛᴀʀᴛ ʏᴏᴜʀ ᴅᴀʏ ᴡɪᴛʜ ᴅᴇᴛᴇʀᴍɪɴᴀᴛɪᴏɴ, ᴇɴᴅ ɪᴛ ᴡɪᴛʜ sᴀᴛɪsғᴀᴄᴛɪᴏɴ.", "🌞 ᴛʜᴇ sᴜɴ ɪs ᴜᴘ, ᴛʜᴇ ᴅᴀʏ ɪs ʏᴏᴜʀs.", "📖 ᴇᴠᴇʀʏ ᴍᴏʀɴɪɴɢ ɪs ᴀ ɴᴇᴡ ᴘᴀɢᴇ ᴏғ ʏᴏᴜʀ sᴛᴏʀʏ. ᴍᴀᴋᴇ ɪᴛ ᴄᴏᴜɴᴛ." ], 
-            afternoon: [ "⏳ ᴋᴇᴇᴘ ɢᴏɪɴɢ. ʏᴏᴜ'ʀᴇ ʜᴀʟғᴡᴀʏ ᴛᴏ ɢʀᴇᴀᴛɴᴇss.", "🔄 sᴛᴀʏ ғᴏᴄᴜsᴇᴅ. ᴛʜᴇ ɢʀɪɴᴅ ᴅᴏᴇsɴ'ᴛ sᴛᴏᴘ ᴀᴛ ɴᴏᴏɴ.", "🏗️ sᴜᴄᴄᴇss ɪs ʙᴜɪʟᴛ ɪɴ ᴛʜᴇ ʜᴏᴜʀs ɴᴏʙᴏᴅʏ ᴛᴀʟᴋs ᴀʙᴏᴜᴛ.", "🔥 ᴘᴜsʜ ᴛʜʀᴏᴜɢʜ. ᴄʜᴀᴍᴘɪᴏɴs ᴀʀᴇ ᴍᴀᴅᴇ ɪɴ ᴛʜᴇ ᴍɪᴅᴅʟᴇ ᴏғ ᴛʜᴇ ᴅᴀʏ.", "⏰ ᴅᴏɴ'ᴛ ᴡᴀᴛᴄʜ ᴛʜᴇ ᴄʟᴏᴄᴋ, ᴅᴏ ᴡʜᴀᴛ ɪᴛ ᴅᴏᴇs—ᴋᴇᴇᴘ ɢᴏɪɴɢ." ],
-            evening: [ "🛌 ʀᴇsᴛ ɪs ᴘᴀʀᴛ ᴏғ ᴛʜᴇ ᴘʀᴏᴄᴇss. ʀᴇᴄʜᴀʀɢᴇ ᴡɪsᴇʟʏ.", "🌇 ᴇᴠᴇɴɪɴɢ ʙʀɪɴɢꜱ ꜱɪʟᴇɴᴄᴇ ᴛʜᴀᴛ ꜱᴘᴇᴀᴋꜱ ʟᴏᴜᴅᴇʀ ᴛʜᴀɴ ᴅᴀʏʟɪɢʜᴛ.", "✨ ʏᴏᴜ ᴅɪᴅ ᴡᴇʟʟ ᴛᴏᴅᴀʏ. ᴘʀᴇᴘᴀʀᴇ ғᴏʀ ᴀɴ ᴇᴠᴇɴ ʙᴇᴛᴛᴇʀ �ᴛᴏᴍᴏʀʀᴏᴡ.", "🌙 ʟᴇᴛ ᴛʜᴇ ɴɪɢʜᴛ sᴇᴛᴛʟᴇ ɪɴ, ʙᴜᴛ ᴋᴇᴇᴘ ʏᴏᴜʀ ᴅʀᴇᴀᴍs ᴡɪᴅᴇ ᴀᴡᴀᴋᴇ.", "🧠 ɢʀᴏᴡᴛʜ ᴅᴏᴇsɴ'ᴛ ᴇɴᴅ ᴀᴛ sᴜɴsᴇᴛ. ɪᴛ sʟᴇᴇᴘs ᴡɪᴛʜ ʏᴏᴜ." ],
-            night: [ "🌌 ᴛʜᴇ ɴɪɢʜᴛ ɪs sɪʟᴇɴᴛ, ʙᴜᴛ ʏᴏᴜʀ ᴅʀᴇᴀᴍs ᴀʀᴇ ʟᴏᴜᴅ.", "⭐ sᴛᴀʀs sʜɪɴᴇ ʙʀɪɢʜᴛᴇsᴛ ɪɴ ᴛʜᴇ ᴅᴀʀᴋ. sᴏ ᴄᴀɴ ʏᴏᴜ.", "🧘‍♂️ ʟᴇᴛ ɢᴏ ᴏғ ᴛʜᴇ ɴᴏɪsᴇ. ᴇᴍʙʀᴀᴄᴇ ᴛʜᴇ ᴘᴇᴀᴄᴇ.", "✅ ʏᴏᴜ ᴍᴀᴅᴇ ɪᴛ ᴛʜʀᴏᴜɢʜ ᴛʜᴇ ᴅᴀʏ. ɴᴏᴡ ᴅʀᴇᴀᴍ ʙɪɢ.", "🌠 ᴍɪᴅɴɪɢʜᴛ ᴛʜᴏᴜɢʜᴛs ᴀʀᴇ ᴛʜᴇ ʙʟᴜᴇᴘʀɪɴᴛ ᴏғ ᴛᴏᴍᴏʀʀᴏᴡ's ɢʀᴇᴀᴛɴᴇss." ],
-            latenight: [ "🕶️ ᴡʜɪʟᴇ ᴛʜᴇ ᴡᴏʀʟᴅ sʟᴇᴇᴘs, ᴛʜᴇ ᴍɪɴᴅs ᴏғ ʟᴇɢᴇɴᴅs ᴡᴀɴᴅᴇʀ.", "⏱️ ʟᴀᴛᴇ ɴɪɢʜᴛs ᴛᴇᴀᴄʜ ᴛʜᴇ ᴅᴇᴇᴘᴇsᴛ ʟᴇssᴏɴs.", "🔕 sɪʟᴇɴᴄᴇ ɪsɴ'ᴛ ᴇᴍᴘᴛʏ—ɪᴛ's ғᴜʟʟ ᴏғ ᴀɴsᴡᴇʀs.", "✨ ᴄʀᴇᴀᴛɪᴠɪᴛʏ ᴡʜɪsᴘᴇʀs ᴡʜᴇɴ �ᴛʜᴇ ᴡᴏʀʟᴅ ɪs ǫᴜɪᴇᴛ.", "🌌 ʀᴇsᴛ ᴏʀ ʀᴇғʟᴇᴄᴛ, ʙᴜᴛ ɴᴇᴠᴇʀ ᴡᴀsᴛᴇ ᴛʜᴇ ɴɪɢʜᴛ." ] 
-        };
+const quotes = {
+    morning: ["☀️ ʀɪsᴇ ᴀɴᴅ sʜɪɴᴇ. ɢʀᴇᴀᴛ ᴛʜɪɴɢs ɴᴇᴠᴇʀ ᴄᴀᴍᴇ ғʀᴏᴍ ᴄᴏᴍғᴏʀᴛ ᴢᴏɴᴇs.", "🌅 ᴇᴀᴄʜ ᴍᴏʀɴɪɴɢ ᴡᴇ ᴀʀᴇ ʙᴏʀɴ ᴀɢᴀɪɴ. ᴡʜᴀᴛ ᴡᴇ ᴅᴏ ᴛᴏᴅᴀʏ ɪs ᴡʜᴀᴛ ᴍᴀᴛᴛᴇʀs ᴍᴏsᴛ.", "⚡ sᴛᴀʀᴛ ʏᴏᴜʀ ᴅᴀʏ ᴡɪᴛʜ ᴅᴇᴛᴇʀᴍɪɴᴀᴛɪᴏɴ, ᴇɴᴅ ɪᴛ ᴡɪᴛʜ sᴀᴛɪsғᴀᴄᴛɪᴏɴ.", "🌞 ᴛʜᴇ sᴜɴ ɪs ᴜᴘ, ᴛʜᴇ ᴅᴀʏ ɪs ʏᴏᴜʀs.", "📖 ᴇᴠᴇʀʏ ᴍᴏʀɴɪɴɢ ɪs ᴀ ɴᴇᴡ ᴘᴀɢᴇ ᴏғ ʏᴏᴜʀ sᴛᴏʀʏ. ᴍᴀᴋᴇ ɪᴛ ᴄᴏᴜɴᴛ."],
+    afternoon: ["⏳ ᴋᴇᴇᴘ ɢᴏɪɴɢ. ʏᴏᴜ'ʀᴇ ʜᴀʟғᴡᴀʏ ᴛᴏ ɢʀᴇᴀᴛɴᴇss.", "🔄 sᴛᴀʏ ғᴏᴄᴜsᴇᴅ. ᴛʜᴇ ɢʀɪɴᴅ ᴅᴏᴇsɴ'ᴛ sᴛᴏᴘ ᴀᴛ ɴᴏᴏɴ.", "🏗️ sᴜᴄᴄᴇss ɪs ʙᴜɪʟᴛ ɪɴ ᴛʜᴇ ʜᴏᴜʀs ɴᴏʙᴏᴅʏ ᴛᴀʟᴋs ᴀʙᴏᴜᴛ.", "🔥 ᴘᴜsʜ ᴛʜʀᴏᴜɢʜ. ᴄʜᴀᴍᴘɪᴏɴs ᴀʀᴇ ᴍᴀᴅᴇ ɪɴ ᴛʜᴇ ᴍɪᴅᴅʟᴇ ᴏғ ᴛʜᴇ ᴅᴀʏ.", "⏰ ᴅᴏɴ'ᴛ ᴡᴀᴛᴄʜ ᴛʜᴇ ᴄʟᴏᴄᴋ, ᴅᴏ ᴡʜᴀᴛ ɪᴛ ᴅᴏᴇs—ᴋᴇᴇᴘ ɢᴏɪɴɢ."],
+    evening: ["🛌 ʀᴇsᴛ ɪs ᴘᴀʀᴛ ᴏғ ᴛʜᴇ ᴘʀᴏᴄᴇss. ʀᴇᴄʜᴀʀɢᴇ ᴡɪsᴇʟʏ.", "🌇 ᴇᴠᴇɴɪɴɢ ʙʀɪɴɢꜱ ꜱɪʟᴇɴᴄᴇ ᴛʜᴀᴛ ꜱᴘᴇᴀᴋꜱ ʟᴏᴜᴅᴇʀ ᴛʜᴀɴ ᴅᴀʏʟɪɢʜᴛ.", "✨ ʏᴏᴜ ᴅɪᴅ ᴡᴇʟʟ ᴛᴏᴅᴀʏ. ᴘʀᴇᴘᴀʀᴇ ғᴏʀ ᴀɴ ᴇᴠᴇɴ ʙᴇᴛᴛᴇʀ ᴛᴏᴍᴏʀʀᴏᴡ.", "🌙 ʟᴇᴛ ᴛʜᴇ ɴɪɢʜᴛ sᴇᴛᴛʟᴇ ɪɴ, ʙᴜᴛ ᴋᴇᴇᴘ ʏᴏᴜʀ ᴅʀᴇᴀᴍs ᴡɪᴅᴇ ᴀᴡᴀᴋᴇ.", "🧠 ɢʀᴏᴡᴛʜ ᴅᴏᴇsɴ'ᴛ ᴇɴᴅ ᴀᴛ sᴜɴsᴇᴛ. ɪᴛ sʟᴇᴇᴘs ᴡɪᴛʜ ʏᴏᴜ."],
+    night: ["🌌 ᴛʜᴇ ɴɪɢʜᴛ ɪs sɪʟᴇɴᴛ, ʙᴜᴛ ʏᴏᴜʀ ᴅʀᴇᴀᴍs ᴀʀᴇ ʟᴏᴜᴅ.", "⭐ sᴛᴀʀs sʜɪɴᴇ ʙʀɪɢʜᴛᴇsᴛ ɪɴ ᴛʜᴇ ᴅᴀʀᴋ. sᴏ ᴄᴀɴ ʏᴏᴜ.", "🧘‍♂️ ʟᴇᴛ ɢᴏ ᴏғ ᴛʜᴇ ɴᴏɪsᴇ. ᴇᴍʙʀᴀᴄᴇ ᴛʜᴇ ᴘᴇᴀᴄᴇ.", "✅ ʏᴏᴜ ᴍᴀᴅᴇ ɪᴛ ᴛʜʀᴏᴜɢʜ ᴛʜᴇ ᴅᴀʏ. ɴᴏᴡ ᴅʀᴇᴀᴍ ʙɪɢ.", "🌠 ᴍɪᴅɴɪɢʜᴛ ᴛʜᴏᴜɢʜᴛs ᴀʀᴇ ᴛʜᴇ ʙʟᴜᴇᴘʀɪɴᴛ ᴏғ ᴛᴏᴍᴏʀʀᴏᴡ's ɢʀᴇᴀᴛɴᴇss."],
+    latenight: ["🕶️ ᴡʜɪʟᴇ ᴛʜᴇ ᴡᴏʀʟᴅ sʟᴇᴇᴘs, ᴛʜᴇ ᴍɪɴᴅs ᴏғ ʟᴇɢᴇɴᴅs ᴡᴀɴᴅᴇʀ.", "⏱️ ʟᴀᴛᴇ ɴɪɢʜᴛs ᴛᴇᴀᴄʜ ᴛʜᴇ ᴅᴇᴇᴘᴇsᴛ ʟᴇssᴏɴs.", "🔕 sɪʟᴇɴᴄᴇ ɪsɴ'ᴛ ᴇᴍᴘᴛʏ—ɪᴛ's ғᴜʟʟ ᴏғ ᴀɴsᴡᴇʀs.", "✨ ᴄʀᴇᴀᴛɪᴠɪᴛʏ ᴡʜɪsᴘᴇʀs ᴡʜᴇɴ ᴛʜᴇ ᴡᴏʀʟᴅ ɪs ǫᴜɪᴇᴛ.", "🌌 ʀᴇsᴛ ᴏʀ ʀᴇғʟᴇᴄᴛ, ʙᴜᴛ ɴᴇᴠᴇʀ ᴡᴀsᴛᴇ ᴛʜᴇ ɴɪɢʜᴛ."]
+};
 
-        function getCurrentDateTime() {
-            return new Intl.DateTimeFormat("en", {
-                year: "numeric",
-                month: "long",
-                day: "2-digit"
-            }).format(new Date());
-        }
+function getCurrentDateTime() {
+    return new Intl.DateTimeFormat("en", {
+        year: "numeric",
+        month: "long",
+        day: "2-digit"
+    }).format(new Date());
+}
 
 const GiftedAutoBio = async (Gifted) => {
-                try {
-                    const settings = await getAllSettings();
-                    const botName = settings.BOT_NAME || '𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃';
-                    
-                    const block = getTimeBlock();
-                    const timeDate = getCurrentDateTime();
-                    const timeQuotes = quotes[block];
-                    const quote = timeQuotes[Math.floor(Math.random() * timeQuotes.length)];
+    try {
+        const settings = await getAllSettings();
+        const botName = settings.BOT_NAME || '𝐀ɭīī-𝐌𝐃 𝐁𝚯𝐓';
 
-                    const bioText = `${botName} Online ||\n\n📅 ${timeDate}\n\n➤ ${quote}`;
+        const block = getTimeBlock();
+        const timeDate = getCurrentDateTime();
+        const timeQuotes = quotes[block];
+        const quote = timeQuotes[Math.floor(Math.random() * timeQuotes.length)];
 
-                    await Gifted.updateProfileStatus(bioText);
-                } catch (error) {
-                }
-            };
+        const bioText = `${botName} Online ||\n\n📅 ${timeDate}\n\n➤ ${quote}`;
 
+        await Gifted.updateProfileStatus(bioText);
+    } catch (error) {}
+};
 
 const availableApis = [
     `${GiftedTechApi}/api/ai/ai?apikey=${GiftedApiKey}&q=`,
@@ -543,64 +529,64 @@ function getRandomApi() {
 function processForTTS(text) {
     if (!text || typeof text !== 'string') return '';
     return text.replace(/[\[\]\(\)\{\}]/g, ' ')
-              .replace(/\s+/g, ' ')
-              .substring(0, 190);
+        .replace(/\s+/g, ' ')
+        .substring(0, 190);
 }
 
 const identityPatterns = [
-                /who\s*(made|created|built)\s*you/i,
-                /who\s*is\s*your\s*(creator|developer|maker|owner|father|parent)/i,
-                /what('?s| is)\s*your\s*name\??/i,
-                /who\s*are\s*you\??/i,
-                /who\s*a?you\??/i,
-                /who\s*au\??/i,
-                /what('?s| is)\s*ur\s*name\??/i,
-                /wat('?s| is)\s*(ur|your)\s*name\??/i,
-                /wats?\s*(ur|your)\s*name\??/i,
-                /wot('?s| is)\s*(ur|your)\s*name\??/i,
-                /hoo\s*r\s*u\??/i,
-                /who\s*u\??/i,
-                /whos\s*u\??/i,
-                /whos?\s*this\??/i,
-                /you\s*called\s*gifted/i,
-                /are\s*you\s*gifted/i,
-                /are\s*u\s*gifted/i,
-                /u\s*gifted\??/i,
-                /who\s*is\s*your\s*boss\??/i,
-                /who\s*ur\s*boss\??/i,
-                /who\s*your\s*boss\??/i,
-                /whoa\s*created\s*you\??/i,
-                /who\s*made\s*u\??/i,
-                /who\s*create\s*u\??/i,
-                /who\s*built\s*u\??/i,
-                /who\s*ur\s*owner\??/i,
-                /who\s*is\s*u\??/i,
-                /what\s*are\s*you\??/i,
-                /what\s*r\s*u\??/i,
-                /wat\s*r\s*u\??/i
-            ];
+    /who\s*(made|created|built)\s*you/i,
+    /who\s*is\s*your\s*(creator|developer|maker|owner|father|parent)/i,
+    /what('?s| is)\s*your\s*name\??/i,
+    /who\s*are\s*you\??/i,
+    /who\s*a?you\??/i,
+    /who\s*au\??/i,
+    /what('?s| is)\s*ur\s*name\??/i,
+    /wat('?s| is)\s*(ur|your)\s*name\??/i,
+    /wats?\s*(ur|your)\s*name\??/i,
+    /wot('?s| is)\s*(ur|your)\s*name\??/i,
+    /hoo\s*r\s*u\??/i,
+    /who\s*u\??/i,
+    /whos\s*u\??/i,
+    /whos?\s*this\??/i,
+    /you\s*called\s*gifted/i,
+    /are\s*you\s*gifted/i,
+    /are\s*u\s*gifted/i,
+    /u\s*gifted\??/i,
+    /who\s*is\s*your\s*boss\??/i,
+    /who\s*ur\s*boss\??/i,
+    /who\s*your\s*boss\??/i,
+    /whoa\s*created\s*you\??/i,
+    /who\s*made\s*u\??/i,
+    /who\s*create\s*u\??/i,
+    /who\s*built\s*u\??/i,
+    /who\s*ur\s*owner\??/i,
+    /who\s*is\s*u\??/i,
+    /what\s*are\s*you\??/i,
+    /what\s*r\s*u\??/i,
+    /wat\s*r\s*u\??/i
+];
 
 function isIdentityQuestion(query) {
-    return identityPatterns.some(pattern => 
+    return identityPatterns.some(pattern =>
         typeof query === 'string' && pattern.test(query)
     );
 }
 
 async function getAIResponse(query) {
     if (isIdentityQuestion(query)) {
-        return 'I am an Interactive Ai Assistant Chat Bot, created by Clever tech nexus!';
+        return 'I am an Interactive Ai Assistant Chat Bot, created by Ali tech!';
     }
-    
+
     try {
         const apiUrl = getRandomApi();
         const response = await fetch(apiUrl + encodeURIComponent(query));
-        
+
         try {
             const data = await response.json();
-            let aiResponse = data.result || data.response || data.message || 
-                           (data.data && (data.data.text || data.data.message)) || 
-                           JSON.stringify(data);
-            
+            let aiResponse = data.result || data.response || data.message ||
+                (data.data && (data.data.text || data.data.message)) ||
+                JSON.stringify(data);
+
             if (typeof aiResponse === 'object') {
                 aiResponse = JSON.stringify(aiResponse);
             }
@@ -619,7 +605,7 @@ async function getAIResponse(query) {
 const processedMessages = new Set();
 const userCooldown = new Map();
 
-function GiftedChatBot(Gifted, chatBot, chatBotMode, createContext, createContext2, googleTTS) {
+function GiftedChatBot(Gifted, chatBot, chatBotMode, googleTTS) {
 
     if (chatBot !== 'true' && chatBot !== 'audio') return;
 
@@ -634,12 +620,10 @@ function GiftedChatBot(Gifted, chatBot, chatBotMode, createContext, createContex
             const msgId = msg.key?.id;
             const sender = msg.key?.participant || msg.key?.remoteJid;
 
-            // 🚫 duplicate
             if (processedMessages.has(msgId)) return;
             processedMessages.add(msgId);
             setTimeout(() => processedMessages.delete(msgId), 60000);
 
-            // 🚫 cooldown (3s)
             const now = Date.now();
             if (userCooldown.has(sender)) {
                 if (now - userCooldown.get(sender) < 3000) return;
@@ -665,29 +649,19 @@ function GiftedChatBot(Gifted, chatBot, chatBotMode, createContext, createContex
 
             if (!text || typeof text !== 'string') return;
 
-            // 🚫 ignore commands
             if (text.startsWith('.') || text.startsWith('!')) return;
-
-            // 🚫 ignore short spam
             if (text.length < 2) return;
 
             const settings = await getAllSettings().catch(() => ({}));
-            const botName = settings.BOT_NAME || '𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃';
 
             const aiResponse = await getAIResponse(text);
 
-            // 📩 TEXT
             if (chatBot === "true") {
                 await Gifted.sendMessage(jid, {
                     text: String(aiResponse),
-                    ...(await createContext(jid, {
-                        title: `${botName} 𝐂𝐇𝐀𝐓 𝐁𝐎𝐓`,
-                        body: '𝐏𝐨𝐰𝐞𝐫𝐞𝐝 𝐛𝐲 𝑨𝒏𝒐𝒏𝒚𝒎𝒖𝒔 𝒖𝒔𝒆𝒓🥷'
-                    }))
                 }, { quoted: msg });
             }
 
-            // 🔊 AUDIO
             if (chatBot === 'audio') {
                 const ttsText = processForTTS(String(aiResponse));
                 if (!ttsText) return;
@@ -703,10 +677,6 @@ function GiftedChatBot(Gifted, chatBot, chatBotMode, createContext, createContex
                     mimetype: "audio/mpeg",
                     ptt: true,
                     waveform: [100, 0, 100, 0, 100, 0, 100],
-                    ...(await createContext2(jid, {
-                        title: `${botName} 𝐀𝐔𝐃𝐈𝐎-𝐂𝐇𝐀𝐓 𝐁𝐎𝐓`,
-                        body: '𝐏𝐨𝐰𝐞𝐫𝐞𝐝 𝐛𝐲 𝑨𝒏𝒐𝒏𝒚𝒎𝒐𝒖𝒔 𝒖𝒔𝒆𝒓🥷'
-                    }))
                 }, { quoted: msg });
             }
 
@@ -716,13 +686,12 @@ function GiftedChatBot(Gifted, chatBot, chatBotMode, createContext, createContex
     });
 }
 
-
 const presenceTimers = new Map();
 
 const GiftedPresence = async (Gifted, jid) => {
     try {
         const isGroup = jid.endsWith('@g.us');
-        const duration = 15 * 60 * 1000; // minutes duration
+        const duration = 15 * 60 * 1000;
 
         if (presenceTimers.has(jid)) {
             clearTimeout(presenceTimers.get(jid));
@@ -740,7 +709,7 @@ const GiftedPresence = async (Gifted, jid) => {
 
         let whatsappPresence;
 
-        switch(presence) {
+        switch (presence) {
             case 'online':
                 whatsappPresence = "available";
                 break;
@@ -767,36 +736,34 @@ const GiftedPresence = async (Gifted, jid) => {
     }
 };
 
-
 const GiftedAnticall = async (json, Gifted) => {
-   const settings = await getAllSettings();
-   const antiCall = settings.ANTICALL || 'false';
-   const antiCallMsg = settings.ANTICALL_MSG || 'Calls are not allowed. This bot automatically rejects calls.';
+    const settings = await getAllSettings();
+    const antiCall = settings.ANTICALL || 'false';
+    const antiCallMsg = settings.ANTICALL_MSG || 'Calls are not allowed. This bot automatically rejects calls.';
 
-   for (const id of json) {
-      if (id.status === 'offer') {
-         if (antiCall === "true" || antiCall === "decline") {
-            let msg = await Gifted.sendMessage(id.from, {
-               text: `${antiCallMsg}`,
-               mentions: [id.from],
-            });
-            await Gifted.rejectCall(id.id, id.from);
-         } else if (antiCall === "block") {
-            let msg = await Gifted.sendMessage(id.from, {
-               text: `${antiCallMsg}\nYou are Being Blocked due to Calling While Anticall Action Is *"Block"*!`,
-               mentions: [id.from],
-            });
-            await Gifted.rejectCall(id.id, id.from); 
-            await Gifted.updateBlockStatus(id.from, "block");
-         }
-      }
-   }
+    for (const id of json) {
+        if (id.status === 'offer') {
+            if (antiCall === "true" || antiCall === "decline") {
+                await Gifted.sendMessage(id.from, {
+                    text: `${antiCallMsg}`,
+                    mentions: [id.from],
+                });
+                await Gifted.rejectCall(id.id, id.from);
+            } else if (antiCall === "block") {
+                await Gifted.sendMessage(id.from, {
+                    text: `${antiCallMsg}\nYou are Being Blocked due to Calling While Anticall Action Is *"Block"*!`,
+                    mentions: [id.from],
+                });
+                await Gifted.rejectCall(id.id, id.from);
+                await Gifted.updateBlockStatus(id.from, "block");
+            }
+        }
+    }
 };
-
 
 const processMediaMessage = async (deletedMessage) => {
     let mediaType, mediaInfo;
-    
+
     const mediaTypes = {
         imageMessage: 'image',
         videoMessage: 'video',
@@ -817,7 +784,7 @@ const processMediaMessage = async (deletedMessage) => {
 
     try {
         const mediaStream = await downloadMediaMessage(deletedMessage, { logger });
-        
+
         const extensions = {
             image: 'jpg',
             video: 'mp4',
@@ -825,11 +792,11 @@ const processMediaMessage = async (deletedMessage) => {
             sticker: 'webp',
             document: mediaInfo.fileName?.split('.').pop() || 'bin'
         };
-        
+
         const tempPath = path.join(__dirname, `./temp/temp_${Date.now()}.${extensions[mediaType]}`);
         await fs.ensureDir(path.dirname(tempPath));
         await pipeline(mediaStream, fs.createWriteStream(tempPath));
-        
+
         return {
             path: tempPath,
             type: mediaType,
@@ -846,37 +813,27 @@ const processMediaMessage = async (deletedMessage) => {
 
 const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwnerJid, deleterPushName, senderPushName) => {
     const settings = await getAllSettings();
-    const botName = settings.BOT_NAME || '𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃';
-    const botPic = settings.BOT_PIC || '';
     const botFooter = settings.FOOTER || '';
     const antiDelete = settings.ANTIDELETE || 'indm';
-    const timeZone = settings.TIME_ZONE || 'Africa/Nairobi';
+    const timeZone = settings.TIME_ZONE || 'Asia/Karachi';
 
-    const context = await createContext(deleter, {
-        title: "Anti-Delete",
-        body: botName,
-        thumbnail: botPic
-    });
-    
     const currentTime = formatTime(Date.now(), timeZone);
     const currentDate = formatDate(Date.now(), timeZone);
 
-    const { getLidMapping, getGroupMetadata } = require('./connection/groupCache');
-
     const resolveLidToJidAndDisplay = async (lid, pushName, groupJid) => {
         if (!lid) return { jid: null, display: pushName || 'Unknown', number: null };
-        
+
         let resolvedJid = lid;
-        
+
         if (lid.endsWith('@lid')) {
             let jid = getLidMapping(lid);
-            
+
             if (!jid && Gifted.getJidFromLid) {
                 try {
                     jid = await Gifted.getJidFromLid(lid);
                 } catch (e) {}
             }
-            
+
             if (!jid && groupJid && isJidGroup(groupJid)) {
                 try {
                     const groupMeta = await getGroupMetadata(Gifted, groupJid);
@@ -888,33 +845,32 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                     }
                 } catch (e) {}
             }
-            
+
             if (jid && jid.endsWith('@s.whatsapp.net')) {
                 resolvedJid = jid;
             }
         }
-        
+
         if (resolvedJid.endsWith('@s.whatsapp.net')) {
             const number = resolvedJid.split('@')[0];
-            return { 
-                jid: resolvedJid, 
+            return {
+                jid: resolvedJid,
                 display: `@${number}`,
                 number: number
             };
         }
-        
+
         return { jid: null, display: pushName || lid, number: null };
     };
 
-    const isGroupChat = isJidGroup(key.remoteJid);
     const senderInfo = await resolveLidToJidAndDisplay(sender, senderPushName, key.remoteJid);
     const deleterInfo = await resolveLidToJidAndDisplay(deleter, deleterPushName, key.remoteJid);
-    
+
     const finalSenderDisplay = senderInfo.display;
     const finalDeleterDisplay = deleterInfo.display;
     const senderJid = senderInfo.jid;
     const deleterJid = deleterInfo.jid;
-    
+
     const mentions = [senderJid, deleterJid].filter(j => j !== null);
 
     let chatInfo;
@@ -931,35 +887,34 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
         chatInfo = `💬 Dm Chat: ${finalDeleterDisplay}`;
         if (deleterJid) chatMention = deleterJid;
     }
-    
+
     const allMentions = chatMention ? [...mentions, chatMention] : mentions;
-    
+
     const getContextInfo = (mentionedJids = []) => ({
         mentionedJid: mentionedJids.filter(j => j !== null)
     });
 
     try {
         const promises = [];
-        
+
         if (antiDelete === 'inchat') {
             promises.push((async () => {
                 try {
                     const baseAlert = `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
-                                    `*👤 Sent By:* ${finalSenderDisplay}\n` +
-                                    `*👤 Deleted By:* ${finalDeleterDisplay}\n` +
-                                    `*🕑 Time:* ${currentTime}\n` + 
-                                    `*📆 Date:* ${currentDate}\n` +
-                                    `${chatInfo}\n\n> *${botFooter}*`;
+                        `*👤 Sent By:* ${finalSenderDisplay}\n` +
+                        `*👤 Deleted By:* ${finalDeleterDisplay}\n` +
+                        `*🕑 Time:* ${currentTime}\n` +
+                        `*📆 Date:* ${currentDate}\n` +
+                        `${chatInfo}`;
 
                     if (deletedMsg.message?.conversation || deletedMsg.message?.extendedTextMessage?.text) {
-                        const text = deletedMsg.message.conversation || 
-                                    deletedMsg.message.extendedTextMessage.text;
-                        
+                        const text = deletedMsg.message.conversation ||
+                            deletedMsg.message.extendedTextMessage.text;
+
                         await Gifted.sendMessage(key.remoteJid, {
                             text: `${baseAlert}\n\n📝 *Content:* ${text}`,
                             mentions: allMentions,
                             contextInfo: getContextInfo(allMentions),
-                            ...context
                         });
                     } else {
                         const media = await processMediaMessage(deletedMsg);
@@ -969,7 +924,6 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                                     [media.type]: { url: media.path },
                                     mentions: allMentions,
                                     contextInfo: getContextInfo(allMentions),
-                                    ...context,
                                     ...(media.type === 'audio' ? {
                                         ptt: media.ptt,
                                         mimetype: media.mimetype
@@ -981,17 +935,15 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                                         baseAlert,
                                     mentions: allMentions,
                                     contextInfo: getContextInfo(allMentions),
-                                    ...context
                                 });
                             } else {
                                 await Gifted.sendMessage(key.remoteJid, {
                                     [media.type]: { url: media.path },
-                                    caption: media.caption ? 
-                                        `${baseAlert}\n\n📌 *Caption:* ${media.caption}` : 
+                                    caption: media.caption ?
+                                        `${baseAlert}\n\n📌 *Caption:* ${media.caption}` :
                                         baseAlert,
                                     mentions: allMentions,
                                     contextInfo: getContextInfo(allMentions),
-                                    ...context,
                                     ...(media.type === 'document' ? {
                                         mimetype: media.mimetype,
                                         fileName: media.fileName
@@ -1000,7 +952,7 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                             }
 
                             setTimeout(() => {
-                                fs.unlink(media.path).catch(err => 
+                                fs.unlink(media.path).catch(err =>
                                     logger.error('Media cleanup failed:', err)
                                 );
                             }, 30000);
@@ -1018,38 +970,35 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                     const ownerContext = `*👤 Sent By:* ${finalSenderDisplay}\n*👤 Deleted By:* ${finalDeleterDisplay}\n${chatInfo}`;
 
                     if (deletedMsg.message?.conversation || deletedMsg.message?.extendedTextMessage?.text) {
-                        const text = deletedMsg.message.conversation || 
-                                    deletedMsg.message.extendedTextMessage.text;
-                        
-                        await Gifted.sendMessage(botOwnerJid, { 
-                            text: `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n*Deleted Msg:*\n${text}\n\n> *${botFooter}*`,
+                        const text = deletedMsg.message.conversation ||
+                            deletedMsg.message.extendedTextMessage.text;
+
+                        await Gifted.sendMessage(botOwnerJid, {
+                            text: `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n*Deleted Msg:*\n${text}`,
                             mentions: allMentions,
                             contextInfo: getContextInfo(allMentions),
-                            ...context
                         });
                     } else {
                         const media = await processMediaMessage(deletedMsg);
                         if (media) {
                             const dmAlert = media.caption ?
-                                `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n*Caption:*\n${media.caption}\n\n> *${botFooter}*` :
-                                `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n> *${botFooter}*`;
+                                `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n*Caption:*\n${media.caption}` :
+                                `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}`;
 
                             if (media.type === 'sticker' || media.type === 'audio') {
+                               await Gifted.sendMessage(botOwnerJid, {
+                                    text: dmAlert,
+                                    mentions: allMentions,
+                                    contextInfo: getContextInfo(allMentions),
+                                });
                                 await Gifted.sendMessage(botOwnerJid, {
                                     [media.type]: { url: media.path },
                                     mentions: allMentions,
                                     contextInfo: getContextInfo(allMentions),
-                                    ...context,
                                     ...(media.type === 'audio' ? {
                                         ptt: media.ptt,
                                         mimetype: media.mimetype
                                     } : {})
-                                });
-                                await Gifted.sendMessage(botOwnerJid, {
-                                    text: dmAlert,
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                    ...context
                                 });
                             } else {
                                 await Gifted.sendMessage(botOwnerJid, {
@@ -1057,7 +1006,6 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                                     caption: dmAlert,
                                     mentions: allMentions,
                                     contextInfo: getContextInfo(allMentions),
-                                    ...context,
                                     ...(media.type === 'document' ? {
                                         mimetype: media.mimetype,
                                         fileName: media.fileName
@@ -1066,7 +1014,7 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                             }
 
                             setTimeout(() => {
-                                fs.unlink(media.path).catch(err => 
+                                fs.unlink(media.path).catch(err =>
                                     logger.error('Media cleanup failed:', err)
                                 );
                             }, 30000);
@@ -1078,7 +1026,6 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
                         text: `⚠️ Failed to forward deleted message from ${finalDeleterDisplay}\n\nError: ${error.message}`,
                         mentions: allMentions,
                         contextInfo: getContextInfo(allMentions),
-                        ...context
                     });
                 }
             })());
@@ -1094,11 +1041,11 @@ const GiftedAntiViewOnce = async (Gifted, message) => {
     try {
         if (!message?.message) return;
         if (message.key.fromMe) return;
-        
+
         const msgContent = message.message;
         let viewOnceContent = null;
         let mediaType = null;
-        
+
         if (msgContent.imageMessage?.viewOnce || msgContent.videoMessage?.viewOnce || msgContent.audioMessage?.viewOnce) {
             mediaType = Object.keys(msgContent).find(
                 (key) => key.endsWith("Message") && ["image", "video", "audio"].some((t) => key.includes(t))
@@ -1122,41 +1069,41 @@ const GiftedAntiViewOnce = async (Gifted, message) => {
                 (key) => key.endsWith("Message") && ["image", "video", "audio"].some((t) => key.includes(t))
             ) : null;
         }
-        
+
         if (!viewOnceContent || !mediaType || !viewOnceContent[mediaType]) return;
-        
+
         const settings = await getAllSettings();
         const antiViewOnce = settings.ANTIVIEWONCE || "indm";
         if (antiViewOnce === "off") return;
-        
+
         const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
         const targetJid = antiViewOnce === "indm" ? botJid : message.key.remoteJid;
         const senderNum = (message.key.participant || message.key.remoteJid).split("@")[0].split(":")[0];
-        const botName = settings.BOT_NAME || "𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃";
-        
+        const botName = settings.BOT_NAME || "𝐀ɭīī-𝐌𝐃 𝐁𝚯𝐓";
+
         const mediaMessage = {
             ...viewOnceContent[mediaType],
             viewOnce: false,
         };
-        
-        const path = require("path");
-        const fs = require("fs").promises;
-        const tempDir = path.join(__dirname, "temp");
-        
+
+        const nodePath = require("path");
+        const nodeFs = require("fs").promises;
+        const tempDir = nodePath.join(__dirname, "temp");
+
         try {
-            await fs.mkdir(tempDir, { recursive: true });
+            await nodeFs.mkdir(tempDir, { recursive: true });
         } catch (e) {}
-        
+
         const tempFileName = `vo_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         let tempFilePath = null;
-        
+
         try {
-            tempFilePath = await Gifted.downloadAndSaveMediaMessage(mediaMessage, path.join(tempDir, tempFileName));
-            
+            tempFilePath = await Gifted.downloadAndSaveMediaMessage(mediaMessage, nodePath.join(tempDir, tempFileName));
+
             const originalCaption = mediaMessage.caption || "";
-            const caption = `👁️ *VIEW ONCE REVEALED*\n\n📤 *From:* @${senderNum}\n${originalCaption ? `📝 *Caption:* ${originalCaption}\n` : ""}\n> _Revealed by ${botName}_`;
+            const caption = `👁️ *VIEW ONCE REVEALED*\n\n📤 *From:* @${senderNum}\n${originalCaption ? `📝 *Caption:* ${originalCaption}\n` : ""}`;
             const mime = mediaMessage.mimetype || "";
-            
+
             let sendContent;
             if (mediaType.includes("image")) {
                 sendContent = { image: { url: tempFilePath }, caption, mimetype: mime, mentions: [`${senderNum}@s.whatsapp.net`] };
@@ -1165,7 +1112,7 @@ const GiftedAntiViewOnce = async (Gifted, message) => {
             } else if (mediaType.includes("audio")) {
                 sendContent = { audio: { url: tempFilePath }, ptt: true, mimetype: mime || "audio/mp4" };
             }
-            
+
             if (sendContent) {
                 await Gifted.sendMessage(targetJid, sendContent);
             }
@@ -1216,10 +1163,13 @@ const _extractRawCaption = (msgObj) => {
 
 const _resolveLid = async (Gifted, lid) => {
     if (!lid?.endsWith('@lid')) return lid;
-    const { getLidMapping } = require('./connection/groupCache');
+    
     const cached = getLidMapping(lid);
     if (cached) return cached;
-    try { const r = await Gifted.getJidFromLid(lid); if (r) return r; } catch (e) {}
+    try {
+        const r = await Gifted.getJidFromLid(lid);
+        if (r) return r;
+    } catch (e) {}
     return lid;
 };
 
@@ -1236,8 +1186,6 @@ const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
 
         const rawChatJid = key.remoteJid;
         const msgId = key.id;
-
-        const { getGroupMetadata } = require('./connection/groupCache');
 
         const resolvedChatJid = await _resolveLid(Gifted, rawChatJid);
         const isGroup = resolvedChatJid?.endsWith('@g.us') || rawChatJid?.endsWith('@g.us');
@@ -1279,7 +1227,7 @@ const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
             : resolvedChatJid?.split('@')[0] || 'Unknown';
 
         const botFooter = settings.FOOTER || '';
-        const timeZone = settings.TIME_ZONE || 'Africa/Nairobi';
+        const timeZone = settings.TIME_ZONE || 'Asia/Karachi';
 
         let chatLabel = isGroup ? resolvedChatJid : 'DM';
         if (isGroup) {
@@ -1299,14 +1247,12 @@ const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
             `*📆 Date:* ${currentDate}\n` +
             `*💬 Chat:* ${chatLabel}\n\n` +
             `*📄 Original ${originalMediaObj ? 'Caption' : 'Message'}:* ${origCaption}\n` +
-            `*📝 Edited To:* ${newCaption}\n\n` +
-            `> *${botFooter}*`;
+            `*📝 Edited To:* ${newCaption}`;
 
         const sendAlert = async (targetJid) => {
             if (!targetJid) return;
             if (originalMediaObj) {
                 try {
-                    const { downloadMediaMessage } = require('gifted-baileys');
                     const buffer = await downloadMediaMessage(originalMediaObj, 'buffer', {});
                     if (origMsgType === 'imageMessage') {
                         await Gifted.sendMessage(targetJid, { image: buffer, caption: alertText, mentions });
@@ -1346,41 +1292,143 @@ const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
 };
 
 async function antiStickerHandler(mek, Gifted) {
-  try {
-    const from = mek.key.remoteJid;
+    try {
+        if (!mek?.message || mek.key.fromMe) return;
 
-    if (!from.endsWith("@g.us")) return;
+        const from = mek.key.remoteJid;
+        if (!from.endsWith("@g.us")) return;
 
-const raw = await getGroupSetting(from, "antisticker");
+        const rawSetting = await getGroupSetting(from, "antisticker");
 
-const antiSticker =
-    raw === true ||
-    raw === "true" ||
-    raw === 1;
+        const mode = rawSetting === true || rawSetting === 1 ? "delete"
+            : typeof rawSetting === "string" ? rawSetting.toLowerCase()
+            : null;
 
-if (antiSticker !== true) return;
+        if (!mode || mode === "false" || mode === "off") return;
 
-    const msg =
-      mek.message?.stickerMessage ||
-      mek.message?.ephemeralMessage?.message?.stickerMessage ||
-      mek.message?.viewOnceMessageV2?.message?.stickerMessage;
+        const msg =
+            mek.message?.stickerMessage ||
+            mek.message?.ephemeralMessage?.message?.stickerMessage ||
+            mek.message?.viewOnceMessageV2?.message?.stickerMessage;
 
-    if (!msg) return;
+        if (!msg) return;
 
-    const sender = mek.key.participant || mek.key.remoteJid;
+        let sender = mek.key.participant || mek.key.participantPn || mek.participant;
+        if (!sender) return;
 
-    await Gifted.sendMessage(from, {
-      delete: mek.key,
-    });
+        // LID resolve (same as other modules)
+        if (sender.endsWith("@lid")) {
+            const cached = getLidMapping(sender);
+            if (cached) sender = cached;
+            else {
+                try {
+                    const resolved = await Gifted.getJidFromLid(sender);
+                    if (resolved) sender = resolved;
+                } catch (e) {}
+            }
+        }
 
-    await Gifted.sendMessage(from, {
-      text: `🚫 @${sender.split("@")[0]} Stickers are not allowed here!`,
-      mentions: [sender],
-    });
-  } catch (err) {
-    console.error("AntiSticker Handler Error:", err);
-  }
+        const senderNum = sender.split("@")[0];
+
+        const sudoNumbers = await getSudoNumbers() || [];
+        const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
+
+        // 🔥 SAME PATTERN AS OTHER MODULES
+        if (isSuperUser) return;
+
+        const groupMetadata = await Gifted.groupMetadata(from);
+        if (!groupMetadata?.participants) return;
+
+        const groupAdmins = groupMetadata.participants
+            .filter(p => p.admin)
+            .map(p => (p.id || "").split("@")[0]);
+
+        const isAdmin = groupAdmins.includes(senderNum);
+
+        if (isAdmin) return;
+
+        // delete message first (same pattern)
+        try {
+            await Gifted.sendMessage(from, { delete: mek.key });
+        } catch (err) {
+            console.error("AntiSticker delete error:", err.message);
+        }
+
+        // ACTIONS
+        if (mode === "null") return;
+
+        if (mode === "delete") {
+            await Gifted.sendMessage(from, {
+                text: `🚫 *Anti-Sticker*\nStickers are not allowed @${senderNum}!`,
+                mentions: [sender],
+            });
+        }
+
+        else if (mode === "warn") {
+            
+            const warnLimit =
+                parseInt(await getGroupSetting(from, "ANTISTICKER_WARN_COUNT")) || 3;
+
+            const currentWarns = await addAntistickerWarning(from, sender);
+
+            if (currentWarns >= warnLimit) {
+                try {
+                    await Gifted.groupParticipantsUpdate(from, [sender], "remove");
+                    await resetAntistickerWarnings(from, sender);
+
+                    await Gifted.sendMessage(from, {
+                        text: `🚫 @${senderNum} reached ${warnLimit} warnings and has been kicked for stickers!`,
+                        mentions: [sender],
+                    });
+                } catch (e) {
+                    await Gifted.sendMessage(from, {
+                        text: `⚠️ @${senderNum} has ${currentWarns}/${warnLimit} warnings! Could not kick.`,
+                        mentions: [sender],
+                    });
+                }
+            } else {
+                await Gifted.sendMessage(from, {
+                    text: `⚠️ Warning ${currentWarns}/${warnLimit} for @${senderNum}!\nStickers are not allowed.`,
+                    mentions: [sender],
+                });
+            }
+        }
+
+        else if (mode === "kick") {
+            try {
+                await Gifted.groupParticipantsUpdate(from, [sender], "remove");
+                await Gifted.sendMessage(from, {
+                    text: `🚫 @${senderNum} kicked for sending sticker!`,
+                    mentions: [sender],
+                });
+            } catch (e) {
+                await Gifted.sendMessage(from, {
+                    text: `⚠️ Could not kick @${senderNum}!`,
+                    mentions: [sender],
+                });
+            }
+        }
+
+    } catch (err) {
+        console.error("AntiSticker Handler Error:", err);
+    }
 }
 
-
-module.exports = { logger, emojis, GiftedAutoReact, GiftedTechApi, GiftedApiKey, GiftedAntiLink, GiftedAntibad, GiftedAntiGroupMention, GiftedAutoBio, GiftedChatBot, GiftedAntiDelete, GiftedAnticall, GiftedPresence, GiftedAntiViewOnce, GiftedAntiEdit, antiStickerHandler };
+module.exports = {
+    logger,
+    emojis,
+    GiftedAutoReact,
+    GiftedTechApi,
+    GiftedApiKey,
+    GiftedAntiLink,
+    GiftedAntibad,
+    GiftedAntiGroupMention,
+    GiftedAutoBio,
+    GiftedChatBot,
+    GiftedAntiDelete,
+    GiftedAnticall,
+    GiftedPresence,
+    GiftedAntiViewOnce,
+    GiftedAntiEdit,
+    antiStickerHandler
+};
