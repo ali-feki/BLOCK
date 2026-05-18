@@ -212,6 +212,11 @@ async function startGifted() {
                         const totalCommands = commands.filter(
                             (c) => c.pattern && !c.dontAddCommandList,
                         ).length;
+						const sudoUsers = await getSudoNumbers?.() || [];
+
+                        const sudoText = sudoUsers.length
+                        ? sudoUsers.map(v => v.replace(/[^0-9]/g, "")).join(", ")
+                        : "No Sudo";
                         console.log("💜 Connected to Whatsapp, Active!");
 
                         if (s.STARTING_MESSAGE === "true") {
@@ -227,13 +232,7 @@ async function startGifted() {
 │ 👀 𝚂𝚃𝙰𝚃𝚄𝚂 𝚅𝙸𝙴𝚆: ${s.AUTO_READ_STATUS || "false"}
 │ 🫟 𝚂𝚃𝙰𝚃𝚄𝚂 𝚁𝙴𝙰𝙲𝚃𝚂: ${s.AUTO_LIKE_STATUS || "false"}
 │ 🟢 𝙿𝚁𝙴𝚂𝙴𝙽𝙲𝙴: ${s.PRESENCE || "true"}
-│ 👑 𝚂𝚄𝙳𝙾 𝚄𝚂𝙴𝚁𝚂: ${
-        sudoUsers.length
-            ? sudoUsers
-                  .map((v) => v.replace(/[^0-9]/g, ""))
-                  .join(", ")
-            : "No Sudo"
-    }
+│ 👑 𝚂𝚄𝙳𝙾: ${sudoText}
 ╰──────────────────⳹
 
 📢 𝚄𝙿𝙳𝙰𝚃𝙴𝚂:
