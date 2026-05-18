@@ -747,7 +747,7 @@ function setupCommandHandler(Gifted) {
             const mode = (settings.MODE || "public").toLowerCase();
 
 if (mode === "private" && !isSuperUser) return;
-if (mode === "groups" && !isGroup) return;
+if (mode === "groups" && !isGroup && !isSuperUser) return;
                 
             try {
                 const helpers = createHelpers(Gifted, ms, from);
@@ -794,7 +794,7 @@ if (mode === "groups" && !isGroup) return;
             const mode = (settings.MODE || "public").toLowerCase();
 
 if (mode === "private" && !isSuperUser) return;
-if (mode === "groups" && !isGroup) return;
+if (mode === "groups" && !isGroup && !isSuperUser) return;
 
             try {
                 const helpers = createHelpers(Gifted, ms, from);
