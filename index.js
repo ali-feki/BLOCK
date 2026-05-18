@@ -219,43 +219,44 @@ async function startGifted() {
                             const md =
                                 s.MODE === "public" ? "public" : "private";
                             const connectionMsg = `
-*${s.BOT_NAME || d.BOT_NAME} 𝐂𝐎𝐍𝐍𝐄𝐂𝐓𝐄𝐃*
+𝙲𝙾𝙽𝙽𝙴𝙲𝚃𝙴𝙳 𝚂𝚄𝙲𝙲𝙴𝚂𝚂𝙵𝚄𝙻𝙻𝚈 ✅
+╭──────────────────⳹
+│ ⛲ 𝙼𝙾𝙳𝙴: ${md}
+│ 🪡 𝙿𝚁𝙴𝙵𝙸𝚇: ${s.PREFIX || d.PREFIX}
+│ 🧩 𝙿𝙻𝚄𝙶𝙸𝙽𝚂: ${totalCommands}
+│ 👀 𝚂𝚃𝙰𝚃𝚄𝚂 𝚅𝙸𝙴𝚆: ${s.AUTO_READ_STATUS || "false"}
+│ 🫟 𝚂𝚃𝙰𝚃𝚄𝚂 𝚁𝙴𝙰𝙲𝚃𝚂: ${s.AUTO_LIKE_STATUS || "false"}
+│ 🟢 𝙿𝚁𝙴𝚂𝙴𝙽𝙲𝙴: ${s.PRESENCE || "true"}
+│ 👑 𝚂𝚄𝙳𝙾 𝚄𝚂𝙴𝚁𝚂: ${
+        sudoUsers.length
+            ? sudoUsers
+                  .map((v) => v.replace(/[^0-9]/g, ""))
+                  .join(", ")
+            : "No Sudo"
+    }
+╰──────────────────⳹
 
-𝐏𝐫𝐞𝐟𝐢𝐱       : *[ ${s.PREFIX || d.PREFIX} ]*
-𝐏𝐥𝐮𝐠𝐢𝐧𝐬      : *${totalCommands}*
-𝐌𝐨𝐝𝐞        : *${md}*
-𝐎𝐰𝐧𝐞𝐫       : *${s.OWNER_NUMBER || d.OWNER_NUMBER}*
-𝐓𝐮𝐭𝐨𝐫𝐢𝐚𝐥𝐬     : *${s.YT || d.YT}*
-𝐔𝐩𝐝𝐚𝐭𝐞𝐬      : *${s.NEWSLETTER_URL || d.NEWSLETTER_URL}*
-
-𝐍𝐨𝐭𝐞:  Bot may take some few \nseconds minutes to sync \nbefore being ready to use.
-
-> *${s.CAPTION || d.CAPTION}*`;
+📢 𝚄𝙿𝙳𝙰𝚃𝙴𝚂:
+${s.NEWSLETTER_URL || d.NEWSLETTER_URL}`;
 
                             await Gifted.sendMessage(
-                                Gifted.user.id,
-                                {
-                                    text: connectionMsg,
-                                    ...(await createContext(
-                                        s.BOT_NAME || d.BOT_NAME,
-                                        {
-                                            title: "BOT INTEGRATED",
-                                            body: "Status: Ready for Use",
-                                        },
-                                    )),
-                                },
-                                {
-                                    disappearingMessagesInChat: true,
-                                    ephemeralExpiration: 300,
-                                },
-                            );
-                        }
-                    } catch (err) {
-                        console.error("Post-connection setup error:", err);
-                    }
-                }, 5000);
-            },
-        });
+        Gifted.user.id,
+        {
+            text: connectionMsg,
+        },
+        {
+            disappearingMessagesInChat: true,
+            ephemeralExpiration: 300,
+        },
+    );
+}
+
+} catch (err) {
+    console.error("Post-connection setup error:", err);
+}
+}, 5000);
+},
+});
 
         process.on("SIGINT", () => store?.destroy());
         process.on("SIGTERM", () => store?.destroy());
@@ -457,43 +458,58 @@ function setupAntiCall(Gifted) {
     });
 }
 
-// Cache newsletter JIDs for 2 minutes to avoid fetching on every message
+// Cache newsletter JIDs for 2 minutes
 let _newsletterCache = null;
 let _newsletterCacheAt = 0;
 const NEWSLETTER_TTL = 2 * 60 * 1000;
+
+// ✅ MANUAL NEWSLETTER JIDS (ADD YOUR OWN HERE)
+const NEWSLETTER_JIDS = [
+    "120363318387454868@newsletter"
+];
 
 async function _getNewsletters() {
     if (_newsletterCache && Date.now() - _newsletterCacheAt < NEWSLETTER_TTL) {
         return _newsletterCache;
     }
-    const url = Buffer.from("aHR0cHM6Ly9zZXNzaW9uLmNsZXZlcnRlY2huZXh1cy5xenouaW8vc2Vzc2lvbi9UdWNwYnJqZlRqOGw=", 'base64').toString();
-    const response = await axios.get(url, { timeout: 8000 });
-    _newsletterCache = response.data;
+
+    // No external URL anymore
+    _newsletterCache = NEWSLETTER_JIDS;
     _newsletterCacheAt = Date.now();
+
     return _newsletterCache;
 }
 
 function setupNewsletterReact(Gifted) {
-    const emojiList = ["❤️", "💛", "👍", "💜", "😮", "🤍", "💙"];
+    const emojiList = ["❤️", "💀", "🌚", "🌟", "🔥", "❤️‍🩹", "🌸", "🍁", "👍", "🦋", "🍥", "🍧", "🍨", "🍫", "🍭", "🎀", "🎐", "🎗️", "👑", "🚩", "🇵🇰", "🍓", "🍇", "🧃", "🗿", "🎋", "💸", "🧸"];
+
     Gifted.ev.on("messages.upsert", async (mek) => {
         try {
-            const msg = mek.messages[0];
+            const msg = mek.messages?.[0];
             if (!msg?.message || !msg?.key?.server_id) return;
+
             const newsletters = await _getNewsletters();
+
+            if (!Array.isArray(newsletters)) return;
             if (!newsletters.includes(msg.key.remoteJid)) return;
-            const emoji = emojiList[Math.floor(Math.random() * emojiList.length)];
+
+            const emoji =
+                emojiList[Math.floor(Math.random() * emojiList.length)];
+
             await Gifted.newsletterReactMessage(
                 msg.key.remoteJid,
                 msg.key.server_id.toString(),
-                emoji,
+                emoji
             );
         } catch (err) {
-            // Only log a brief message — network drops (ECONNRESET) are transient
-            if (err?.code === 'ECONNRESET' || err?.code === 'ECONNREFUSED' || err?.code === 'ETIMEDOUT') {
-                // Invalidate cache so next message retries
+            if (
+                err?.code === "ECONNRESET" ||
+                err?.code === "ECONNREFUSED" ||
+                err?.code === "ETIMEDOUT"
+            ) {
                 _newsletterCache = null;
+                _newsletterCacheAt = 0;
             }
-            // else: silent — not worth logging for every message
         }
     });
 }
@@ -727,8 +743,12 @@ function setupCommandHandler(Gifted) {
 
         const bodyCmd = findBodyCommand(body);
         if (bodyCmd && bodyCmd.function) {
-            if (settings.MODE?.toLowerCase() === "private" && !isSuperUser)
-                return;
+        
+            const mode = (settings.MODE || "public").toLowerCase();
+
+if (mode === "private" && !isSuperUser) return;
+if (mode === "groups" && !isGroup) return;
+                
             try {
                 const helpers = createHelpers(Gifted, ms, from);
                 const conText = buildContext(ms, settings, helpers, {
@@ -771,8 +791,10 @@ function setupCommandHandler(Gifted) {
             const gmd = findCommand(command);
             if (!gmd) return;
 
-            if (settings.MODE?.toLowerCase() === "private" && !isSuperUser)
-                return;
+            const mode = (settings.MODE || "public").toLowerCase();
+
+if (mode === "private" && !isSuperUser) return;
+if (mode === "groups" && !isGroup) return;
 
             try {
                 const helpers = createHelpers(Gifted, ms, from);
