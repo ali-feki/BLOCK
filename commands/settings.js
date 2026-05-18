@@ -323,25 +323,57 @@ gmd(
     aliases: ["mode", "botmode", "changemode"],
     react: "⚙️",
     category: "owner",
-    description: "Set bot mode (public/private)",
+    description: "Set bot mode (public/private/groups)",
   },
   async (from, Gifted, conText) => {
     const { q, reply, react, isSuperUser } = conText;
+
     if (!isSuperUser) return reply("❌ Owner Only Command!");
+
     const mode = q?.toLowerCase();
-    if (!mode || !["public", "private"].includes(mode)) {
-      return reply("❌ Please specify: public or private");
+
+    const current = (await getSetting("MODE")) || "public";
+
+    // ❌ Invalid input message (UPGRADED)
+    if (!mode || !["public", "private", "groups"].includes(mode)) {
+      return reply(
+`📊 Current Mode: *${current}*
+
+📌 Usage Example:
+- .setmode public
+- .setmode private
+- .setmode groups
+
+⚙️ Available Modes:
+• public  → everyone can use bot
+• private → only owner/sudo
+• groups  → only group chats`
+      );
     }
+
     try {
-      const current = await getSetting("MODE");
       if (current === mode) {
-        return reply(`⚠️ Bot mode is already set to: *${mode}*`);
+        return reply(
+`⚠️ Already Active!
+
+📊 Current Mode: *${mode}*`
+        );
       }
+
       await setSetting("MODE", mode);
       await react("✅");
-      await reply(`✅ Bot mode set to: *${mode}*`);
+
+      return reply(
+`✅ Mode Updated Successfully!
+
+📊 Previous Mode: *${current}*
+📌 New Mode: *${mode}*
+
+🚀 Bot is now running in *${mode.toUpperCase()}* mode`
+      );
+
     } catch (error) {
-      await reply(`❌ Error: ${error.message}`);
+      return reply(`❌ Error: ${error.message}`);
     }
   },
 );
