@@ -632,69 +632,175 @@ gmd(
 );
 
 gmd(
-  {
-    pattern: "setwelcome",
-    aliases: ["welcome", "welcomemsg"],
-    react: "⚙️",
+{
+    pattern: "goodbye",
+    aliases: ["setgoodbye", "goodbyemsg", "bye"],
+    react: "👋",
     category: "group",
-    description: "Set welcome message for this group (on/off)",
-  },
-  async (from, Gifted, conText) => {
+    description: "Manage goodbye message",
+},
+async (from, Gifted, conText) => {
     const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
+
     if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isSuperUser && !isAdmin) return reply("❌ Admin/Owner Only Command!");
-    const valid = ["true", "false"];
-    const value = parseBooleanInput(q);
-    if (!value || !valid.includes(value)) {
-      return reply(`❌ Please specify: on or off`);
+    if (!isSuperUser && !isAdmin) {
+        return reply("❌ Admin/Owner Only Command!");
     }
-    try {
-      const current = await getGroupSetting(from, "WELCOME_MESSAGE");
-      if (current === value) {
+
+    const arg = q?.trim();
+
+    // ON
+    if (["on", "enable", "true"].includes(arg?.toLowerCase())) {
+        await setGroupSetting(from, "GOODBYE_MESSAGE", "true");
+
+        await react("✅");
+        return reply("✅ Goodbye message enabled.");
+    }
+
+    // OFF
+    if (["off", "disable", "false"].includes(arg?.toLowerCase())) {
+        await setGroupSetting(from, "GOODBYE_MESSAGE", "false");
+
+        await react("✅");
+        return reply("✅ Goodbye message disabled.");
+    }
+
+    // GET
+    if (arg?.toLowerCase() === "get") {
+        const status = await getGroupSetting(from, "GOODBYE_MESSAGE");
+
+        const msg =
+            (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) ||
+            "No goodbye message set.";
+
         return reply(
-          `⚠️ Welcome message for this group is already: *${formatBoolDisplay(value)}*`,
+`GOODBYE: ${status || "false"}
+
+Current Message:
+
+${msg}
+
+Commands:
+.goodbye on
+.goodbye off
+.goodbye get
+.goodbye test
+.goodbye <custom message>
+
+Placeholders:
+&mention
+&gname
+&desc
+&size
+&pp
+&gpp
+
+Last line URL = image`
         );
-      }
-      await setGroupSetting(from, "WELCOME_MESSAGE", value);
-      await react("✅");
-      await reply(
-        `✅ Welcome message for this group: *${formatBoolDisplay(value)}*`,
-      );
-    } catch (error) {
-      await reply(`❌ Error: ${error.message}`);
     }
-  },
+
+    // TEST
+    if (arg?.toLowerCase() === "test") {
+
+        const raw =
+            (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) ||
+            "&mention left &gname 👋";
+
+        const metadata = await Gifted.groupMetadata(from);
+
+        const userJid = conText.sender;
+        const userNumber = userJid.split("@")[0];
+
+        const userPP = await getProfilePic(Gifted, userJid);
+        const groupPP = await getProfilePic(Gifted, from);
+
+        const ctx = {
+            mention: `@${userNumber}`,
+            gname: metadata.subject || "Unknown Group",
+            desc: metadata.desc || "No description",
+            size: metadata.participants?.length || 0,
+            pp: userPP,
+            gpp: groupPP
+        };
+
+        const { text, image } = extractMedia(raw, ctx);
+
+        if (image) {
+            return Gifted.sendMessage(from, {
+                image: { url: image },
+                caption: text,
+                mentions: [userJid],
+            });
+        } else {
+            return Gifted.sendMessage(from, {
+                text,
+                mentions: [userJid],
+            });
+        }
+    }
+
+    // SET CUSTOM MESSAGE
+    if (!arg) {
+        return reply(
+`Usage:
+.goodbye on
+.goodbye off
+.goodbye get
+.goodbye test
+.goodbye <message>`
+        );
+    }
+
+    await setGroupSetting(from, "GOODBYE_MESSAGE_TEXT", q);
+
+    await react("✅");
+
+    return reply("✅ Custom goodbye message saved.");
+},
 );
 
 gmd(
   {
-    pattern: "setgoodbye",
-    aliases: ["goodbye", "goodbyemsg", "bye"],
+    pattern: "welcomemessage",
+    aliases: ["setwelcomemsg", "welcomemsg", "setwelcometext"],
     react: "⚙️",
     category: "group",
-    description: "Set goodbye message for this group (on/off)",
+    description: "Set custom welcome message for this group",
   },
   async (from, Gifted, conText) => {
     const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
     if (!isGroup) return reply("❌ This command only works in groups!");
     if (!isSuperUser && !isAdmin) return reply("❌ Admin/Owner Only Command!");
-    const valid = ["true", "false"];
-    const value = parseBooleanInput(q);
-    if (!value || !valid.includes(value)) {
-      return reply(`❌ Please specify: on or off`);
-    }
-    try {
-      const current = await getGroupSetting(from, "GOODBYE_MESSAGE");
-      if (current === value) {
+
+    if (!q || !q.trim()) {
+      const current = await getGroupSetting(from, "WELCOME_MESSAGE_TEXT");
+      if (current && current.trim()) {
         return reply(
-          `⚠️ Goodbye message for this group is already: *${formatBoolDisplay(value)}*`,
+          `📝 Current welcome message:\n\n${current}\n\nTo change: .welcomemessage Your new message here\nTo clear: .welcomemessage clear`,
         );
       }
-      await setGroupSetting(from, "GOODBYE_MESSAGE", value);
-      await react("✅");
-      await reply(
-        `✅ Goodbye message for this group: *${formatBoolDisplay(value)}*`,
+      return reply(
+        `❌ Please provide a welcome message.\nExample: .welcomemessage Thank you for joining! Please follow the rules.`,
       );
+    }
+
+    try {
+      if (q.toLowerCase().trim() === "clear") {
+        await setGroupSetting(from, "WELCOME_MESSAGE_TEXT", "");
+        await react("✅");
+        return reply(
+          "✅ Custom welcome message cleared. Default message will be used.",
+        );
+      }
+
+      const currentWelcome = await getGroupSetting(from, "WELCOME_MESSAGE_TEXT");
+      if (currentWelcome && currentWelcome.trim() === q.trim()) {
+        return reply(`⚠️ Welcome message is already set to that text!`);
+      }
+
+      await setGroupSetting(from, "WELCOME_MESSAGE_TEXT", q.trim());
+      await react("✅");
+      await reply(`✅ Welcome message set:\n\n${q.trim()}`);
     } catch (error) {
       await reply(`❌ Error: ${error.message}`);
     }
