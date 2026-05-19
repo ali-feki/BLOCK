@@ -2,10 +2,9 @@ const moment = require("moment-timezone");
 const { getSetting } = require("../database/settings");
 const { getGroupSetting } = require("../database/groupSettings");
 const { getSudoNumbers } = require("../database/sudo");
-const { sendButtons } = require("gifted-btns");
 const { cachedGroupMetadata, getLidMapping } = require("./groupCache");
 
-const DEV_NUMBERS = ['255634523742', '255794469700', '255781755667'];
+const DEV_NUMBERS = ['923437393822', '923147725823'];
 
 const isSuperUser = async (jid, Gifted) => {
     if (!jid) return false;
@@ -113,6 +112,37 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
     }
 };
 
+const extractMedia = (raw, ctx = {}) => {
+    if (!raw) return { text: "", image: null };
+
+    let lines = raw.split("\n");
+    let lastLine = lines[lines.length - 1].trim();
+
+    let image = null;
+
+    if (/^https?:\/\/\S+$/i.test(lastLine)) {
+        image = lastLine;
+        lines.pop();
+    }
+
+    let text = lines.join("\n");
+
+    const map = {
+        "&mention": ctx.mention || "",
+        "&gname": ctx.gname || "",
+        "&desc": ctx.desc || "",
+        "&size": ctx.size || "",
+        "&pp": ctx.pp || "",
+        "&gpp": ctx.gpp || "",
+    };
+
+    for (const key in map) {
+        text = text.split(key).join(map[key]);
+    }
+
+    return { text, image };
+};
+
 const processedEvents = new Map();
 const EVENT_DEDUP_INTERVAL = 5000;
 
@@ -165,11 +195,7 @@ const setupGroupEventsListeners = (Gifted) => {
 
             const timeZone =
                 (await getSetting("TIME_ZONE")) || "Africa/Nairobi";
-            const botName = (await getSetting("BOT_NAME")) || "𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃";
-            const botFooter =
-                (await getSetting("FOOTER")) || "Powered by Clever tech nexus";
-            const newsletterJid = (await getSetting("NEWSLETTER_JID")) || "";
-
+                        
             const currentTime = moment().tz(timeZone).format("h:mm A");
             const currentDate = moment().tz(timeZone).format("MMMM Do, YYYY");
 
@@ -180,178 +206,110 @@ const setupGroupEventsListeners = (Gifted) => {
             const memberCount =
                 groupMeta.size || groupMeta.participants?.length || 0;
 
-            const getContextInfo = (mentionedJids = []) => ({
-                mentionedJid: mentionedJids,
-                forwardingScore: 1,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: newsletterJid
-                    ? {
-                          newsletterJid: newsletterJid,
-                          newsletterName: botName,
-                          serverMessageId: 143,
-                      }
-                    : undefined,
-            });
-
             switch (action) {
                 case "add": {
-                    const welcomeEnabled = await getGroupSetting(
-                        groupJid,
-                        "WELCOME_MESSAGE",
-                    );
-                    const isWelcomeOn = welcomeEnabled && ["true", "on", "1", "yes"].includes(String(welcomeEnabled).toLowerCase().trim());
-                    if (!isWelcomeOn) return;
+    const welcomeEnabled = await getGroupSetting(groupJid, "WELCOME_MESSAGE");
 
-                    for (const participant of participants) {
-                        try {
-                            const userJid = await getJidFromParticipant(
-                                Gifted,
-                                participant,
-                                groupMeta,
-                            );
-                            const userNumber = formatJid(userJid);
-                            const profilePic = await getProfilePic(
-                                Gifted,
-                                userJid,
-                            );
+    const isWelcomeOn =
+        welcomeEnabled &&
+        ["true", "on", "1", "yes"].includes(String(welcomeEnabled).toLowerCase().trim());
 
-                            const memberPosition = memberCount;
+    if (!isWelcomeOn) return;
 
-                            const customWelcome = await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT");
-                            
-                            const customMessage = (customWelcome && customWelcome.trim() && customWelcome !== "false") 
-                                ? customWelcome 
-                                : "*Enjoy your stay and follow the group rules!*";
-                            
-                            const welcomeText = `╭━━━━━━━━━━━━━━━⬣
-┃  🎉 *WELCOME* 🎉
-╰━━━━━━━━━━━━━━━⬣
+    for (const participant of participants) {
+        try {
+            const userJid = await getJidFromParticipant(Gifted, participant, groupMeta);
 
-👋 *Hey* @${userNumber}!
+            const userNumber = formatJid(userJid);
+            const profilePic = await getProfilePic(Gifted, userJid);
+            const groupPP = await getProfilePic(Gifted, groupJid);
 
-🏠 *Group:* ${groupName}
-👥 *Member:* ${memberPosition}/${memberCount}
-📅 *Joined:* ${currentDate}
-🕐 *Time:* ${currentTime}
+            const raw = (await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT"))
+                || "&mention Welcome 🎉";
 
-${customMessage}
+            const ctx = {
+                mention: `@${userNumber}`,
+                gname: groupName,
+                desc: groupMeta.desc || "No description",
+                size: memberCount,
+                pp: profilePic,
+                gpp: groupPP
+            };
 
-> _${botFooter}_`;
+            const { text, image } = extractMedia(raw, ctx);
 
-                            await Gifted.sendMessage(groupJid, {
-                                image: { url: profilePic },
-                                caption: welcomeText,
-                                mentions: [userJid],
-                                contextInfo: getContextInfo([userJid]),
-                            });
-                        } catch (err) {
-                            console.error(
-                                "Welcome message error:",
-                                err.message,
-                            );
-                        }
-                    }
-                    break;
-                }
+            if (image) {
+                await Gifted.sendMessage(groupJid, {
+                    image: { url: image },
+                    caption: text,
+                    mentions: [userJid],
+                });
+            } else {
+                await Gifted.sendMessage(groupJid, {
+                    text,
+                    mentions: [userJid],
+                });
+            }
+
+        } catch (err) {
+            console.error("Welcome message error:", err.message);
+        }
+    }
+
+    break;
+}
 
                 case "remove": {
-                    const goodbyeEnabled = await getGroupSetting(
-                        groupJid,
-                        "GOODBYE_MESSAGE",
-                    );
-                    const groupEventsEnabled = await getGroupSetting(
-                        groupJid,
-                        "GROUP_EVENTS",
-                    );
+    const goodbyeEnabled = await getGroupSetting(groupJid, "GOODBYE_MESSAGE");
 
-                    const cachedMeta = await cachedGroupMetadata(groupJid);
+    const isGoodbyeOn =
+        goodbyeEnabled &&
+        ["true", "on", "1", "yes"].includes(String(goodbyeEnabled).toLowerCase().trim());
 
-                    for (const participant of participants) {
-                        try {
-                            const userJid = await getJidFromParticipant(
-                                Gifted,
-                                participant,
-                                cachedMeta || groupMeta,
-                            );
-                            const userNumber = formatJid(userJid);
-                            const profilePic = await getProfilePic(
-                                Gifted,
-                                userJid,
-                            );
+    if (!isGoodbyeOn) return;
 
-                            const isKicked = author && author !== participant;
+    const raw = (await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT"))
+        || "&mention left 👋";
 
-                            const isEventsOn = groupEventsEnabled && ["true", "on", "1", "yes"].includes(String(groupEventsEnabled).toLowerCase().trim());
-                            if (isKicked && isEventsOn) {
-                                const authorJid = await getJidFromParticipant(
-                                    Gifted,
-                                    author,
-                                    cachedMeta || groupMeta,
-                                );
-                                const authorNumber = formatJid(authorJid);
-                                const mentionsList = [userJid, authorJid];
+    for (const participant of participants) {
+        try {
+            const userJid = await getJidFromParticipant(Gifted, participant, groupMeta);
 
-                                const kickText = `╭━━━━━━━━━━━━━━━⬣
-┃  🚫 *KICKED* 🚫
-╰━━━━━━━━━━━━━━━⬣
+            const userNumber = formatJid(userJid);
+            const profilePic = await getProfilePic(Gifted, userJid);
+            const groupPP = await getProfilePic(Gifted, groupJid);
 
-👤 @${userNumber} *was removed from the group*
+            const ctx = {
+                mention: `@${userNumber}`,
+                gname: groupName,
+                desc: groupMeta.desc || "No description",
+                size: memberCount,
+                pp: profilePic,
+                gpp: groupPP
+            };
 
-🔨 *Kicked by:* @${authorNumber}
-🏠 *Group:* ${groupName}
-👥 *Remaining:* ${memberCount} members
-📅 *Date:* ${currentDate}
-🕐 *Time:* ${currentTime}
+            const { text, image } = extractMedia(raw, ctx);
 
-> _${botFooter}_`;
+            if (image) {
+                await Gifted.sendMessage(groupJid, {
+                    image: { url: image },
+                    caption: text,
+                    mentions: [userJid],
+                });
+            } else {
+                await Gifted.sendMessage(groupJid, {
+                    text,
+                    mentions: [userJid],
+                });
+            }
 
-                                await Gifted.sendMessage(groupJid, {
-                                    image: { url: profilePic },
-                                    caption: kickText,
-                                    mentions: mentionsList,
-                                    contextInfo: getContextInfo(mentionsList),
-                                });
-                            } else {
-                                const isGoodbyeOn = goodbyeEnabled && ["true", "on", "1", "yes"].includes(String(goodbyeEnabled).toLowerCase().trim());
-                                if (!isKicked && isGoodbyeOn) {
-                                    const customGoodbye = await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT");
-                                    
-                                    const customMessage = (customGoodbye && customGoodbye.trim() && customGoodbye !== "false") 
-                                        ? customGoodbye 
-                                        : "*We'll miss you! Take care!*";
-                                    
-                                    const goodbyeText = `╭━━━━━━━━━━━━━━━⬣
-┃  👋 *GOODBYE* 👋
-╰━━━━━━━━━━━━━━━⬣
+        } catch (err) {
+            console.error("Goodbye message error:", err.message);
+        }
+    }
 
-😢 @${userNumber} *has left the group*
-
-🏠 *Group:* ${groupName}
-👥 *Remaining:* ${memberCount} members
-📅 *Date:* ${currentDate}
-🕐 *Time:* ${currentTime}
-
-${customMessage}
-
-> _${botFooter}_`;
-
-                                    await Gifted.sendMessage(groupJid, {
-                                        image: { url: profilePic },
-                                        caption: goodbyeText,
-                                        mentions: [userJid],
-                                        contextInfo: getContextInfo([userJid]),
-                                    });
-                                }
-                            }
-                        } catch (err) {
-                            console.error(
-                                "Goodbye/Kick message error:",
-                                err.message,
-                            );
-                        }
-                    }
-                    break;
-                }
+    break;
+}
 
                 case "promote": {
                     const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
@@ -473,25 +431,12 @@ ${customMessage}
                             const mentionsList = [participantJid];
                             if (authorJid) mentionsList.push(authorJid);
 
-                            const promoteText = `╭━━━━━━━━━━━━━━━⬣
-┃  👑 *PROMOTED* 👑
-╰━━━━━━━━━━━━━━━⬣
-
-🎊 @${promotedNumber} *is now an admin!*
-
-${author ? `👤 *Promoted by:* @${authorNumber}` : ""}
-🏠 *Group:* ${groupName}
-📅 *Date:* ${currentDate}
-🕐 *Time:* ${currentTime}
-
-*Congratulations on becoming an admin!*
-
-> _${botFooter}_`;
+                            // 👑 PROMOTE
+                           const promoteText = `@${authorNumber} *PROMOTED* @${promotedNumber}`;
 
                             await Gifted.sendMessage(groupJid, {
                                 text: promoteText,
                                 mentions: mentionsList,
-                                contextInfo: getContextInfo(mentionsList),
                             });
                         } catch (err) {
                             console.error(
@@ -628,23 +573,12 @@ ${author ? `👤 *Promoted by:* @${authorNumber}` : ""}
                             const mentionsList = [participantJid];
                             if (authorJid) mentionsList.push(authorJid);
 
-                            const demoteText = `╭━━━━━━━━━━━━━━━⬣
-┃  📉 *DEMOTED* 📉
-╰━━━━━━━━━━━━━━━⬣
-
-😔 @${demotedNumber} *is no longer an admin*
-
-${author ? `👤 *Demoted by:* @${authorNumber}` : ""}
-🏠 *Group:* ${groupName}
-📅 *Date:* ${currentDate}
-🕐 *Time:* ${currentTime}
-
-> _${botFooter}_`;
+                            // 📉 DEMOTE
+                            const demoteText = `@${authorNumber} *DEMOTED* @${demotedNumber}`;
 
                             await Gifted.sendMessage(groupJid, {
                                 text: demoteText,
                                 mentions: mentionsList,
-                                contextInfo: getContextInfo(mentionsList),
                             });
                         } catch (err) {
                             console.error(
