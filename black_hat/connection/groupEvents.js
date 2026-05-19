@@ -2,9 +2,11 @@ const moment = require("moment-timezone");
 const { getSetting } = require("../database/settings");
 const { getGroupSetting } = require("../database/groupSettings");
 const { getSudoNumbers } = require("../database/sudo");
+const { sendButtons } = require("gifted-btns");
+const axios = require("axios");
 const { cachedGroupMetadata, getLidMapping } = require("./groupCache");
 
-const DEV_NUMBERS = ['923437393822', '923147725823'];
+const DEV_NUMBERS = ['255634523742', '255794469700', '255781755667'];
 
 const isSuperUser = async (jid, Gifted) => {
     if (!jid) return false;
@@ -112,35 +114,79 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
     }
 };
 
+
+// Replace old extractMedia with this
 const extractMedia = (raw, ctx = {}) => {
     if (!raw) return { text: "", image: null };
-
-    let lines = raw.split("\n");
-    let lastLine = lines[lines.length - 1].trim();
-
-    let image = null;
-
-    if (/^https?:\/\/\S+$/i.test(lastLine)) {
-        image = lastLine;
-        lines.pop();
-    }
-
-    let text = lines.join("\n");
 
     const map = {
         "&mention": ctx.mention || "",
         "&gname": ctx.gname || "",
         "&desc": ctx.desc || "",
-        "&size": ctx.size || "",
+        "&size": String(ctx.size || ""),
         "&pp": ctx.pp || "",
         "&gpp": ctx.gpp || "",
     };
 
+    let text = raw;
     for (const key in map) {
         text = text.split(key).join(map[key]);
     }
 
-    return { text, image };
+    // Last non-empty line check
+    let lines = text.split("\n");
+    let image = null;
+
+    let lastIdx = lines.length - 1;
+    while (lastIdx >= 0 && lines[lastIdx].trim() === "") lastIdx--;
+
+    const lastLine = lines[lastIdx]?.trim();
+    if (lastLine && /^https?:\/\/\S+$/i.test(lastLine)) {
+        image = lastLine;
+        lines.splice(lastIdx, 1);
+    }
+
+    return { text: lines.join("\n").trim(), image };
+};
+
+// Add this helper
+const fetchImageBuffer = async (url) => {
+    try {
+        const res = await axios.get(url, {
+            responseType: "arraybuffer",
+            timeout: 8000,
+            headers: {
+                "User-Agent": "WhatsApp/2.23.20.0",
+            },
+        });
+        return Buffer.from(res.data);
+    } catch (e) {
+        return null;
+    }
+};
+
+// Replace sendWelcomeGoodbye logic — use this helper for both
+const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
+    try {
+        if (image) {
+            const buffer = await fetchImageBuffer(image);
+            if (buffer) {
+                await Gifted.sendMessage(groupJid, {
+                    image: buffer,
+                    caption: text,
+                    mentions,
+                });
+                return;
+            }
+        }
+        // Fallback: text only
+        await Gifted.sendMessage(groupJid, {
+            text,
+            mentions,
+        });
+    } catch (err) {
+        console.error("sendGroupEvent error:", err.message);
+    }
 };
 
 const processedEvents = new Map();
@@ -209,23 +255,21 @@ const setupGroupEventsListeners = (Gifted) => {
             switch (action) {
                 case "add": {
     const welcomeEnabled = await getGroupSetting(groupJid, "WELCOME_MESSAGE");
-
     const isWelcomeOn =
         welcomeEnabled &&
         ["true", "on", "1", "yes"].includes(String(welcomeEnabled).toLowerCase().trim());
-
     if (!isWelcomeOn) return;
 
     for (const participant of participants) {
         try {
             const userJid = await getJidFromParticipant(Gifted, participant, groupMeta);
-
             const userNumber = formatJid(userJid);
             const profilePic = await getProfilePic(Gifted, userJid);
             const groupPP = await getProfilePic(Gifted, groupJid);
 
-            const raw = (await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT"))
-                || "&mention Welcome 🎉";
+            const raw =
+                (await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT")) ||
+                "&mention Welcome 🎉";
 
             const ctx = {
                 mention: `@${userNumber}`,
@@ -233,48 +277,32 @@ const setupGroupEventsListeners = (Gifted) => {
                 desc: groupMeta.desc || "No description",
                 size: memberCount,
                 pp: profilePic,
-                gpp: groupPP
+                gpp: groupPP,
             };
 
             const { text, image } = extractMedia(raw, ctx);
-
-            if (image) {
-                await Gifted.sendMessage(groupJid, {
-                    image: { url: image },
-                    caption: text,
-                    mentions: [userJid],
-                });
-            } else {
-                await Gifted.sendMessage(groupJid, {
-                    text,
-                    mentions: [userJid],
-                });
-            }
-
+            await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
         } catch (err) {
-            console.error("Welcome message error:", err.message);
+            console.error("Welcome error:", err.message);
         }
     }
-
     break;
 }
 
                 case "remove": {
     const goodbyeEnabled = await getGroupSetting(groupJid, "GOODBYE_MESSAGE");
-
     const isGoodbyeOn =
         goodbyeEnabled &&
         ["true", "on", "1", "yes"].includes(String(goodbyeEnabled).toLowerCase().trim());
-
     if (!isGoodbyeOn) return;
 
-    const raw = (await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT"))
-        || "&mention left 👋";
+    const raw =
+        (await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT")) ||
+        "&mention Goodbye 👋";
 
     for (const participant of participants) {
         try {
             const userJid = await getJidFromParticipant(Gifted, participant, groupMeta);
-
             const userNumber = formatJid(userJid);
             const profilePic = await getProfilePic(Gifted, userJid);
             const groupPP = await getProfilePic(Gifted, groupJid);
@@ -285,29 +313,15 @@ const setupGroupEventsListeners = (Gifted) => {
                 desc: groupMeta.desc || "No description",
                 size: memberCount,
                 pp: profilePic,
-                gpp: groupPP
+                gpp: groupPP,
             };
 
             const { text, image } = extractMedia(raw, ctx);
-
-            if (image) {
-                await Gifted.sendMessage(groupJid, {
-                    image: { url: image },
-                    caption: text,
-                    mentions: [userJid],
-                });
-            } else {
-                await Gifted.sendMessage(groupJid, {
-                    text,
-                    mentions: [userJid],
-                });
-            }
-
+            await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
         } catch (err) {
-            console.error("Goodbye message error:", err.message);
+            console.error("Goodbye error:", err.message);
         }
     }
-
     break;
 }
 
