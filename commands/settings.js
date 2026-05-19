@@ -633,51 +633,45 @@ gmd(
 
 gmd(
 {
-    pattern: "goodbye",
-    aliases: ["setgoodbye", "goodbyemsg", "bye"],
-    react: "👋",
-    category: "group",
-    description: "Manage goodbye message",
+pattern: "goodbye",
+aliases: ["setgoodbye", "goodbyemsg", "bye"],
+react: "👋",
+category: "group",
+description: "Manage goodbye message",
 },
 async (from, Gifted, conText) => {
-    const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
+const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isSuperUser && !isAdmin) {
-        return reply("❌ Admin/Owner Only Command!");
-    }
+if (!isGroup) return reply("❌ This command only works in groups!");  
+if (!isSuperUser && !isAdmin) return reply("❌ Admin/Owner Only Command!");  
 
-    const arg = q?.trim();
+const arg = (q || "").trim();  
+const cmd = arg.toLowerCase();  
 
-    // ON
-    if (["on", "enable", "true"].includes(arg?.toLowerCase())) {
-        await setGroupSetting(from, "GOODBYE_MESSAGE", "true");
+// ON  
+if (cmd === "on" || cmd === "enable" || cmd === "true") {  
+    await setGroupSetting(from, "GOODBYE_MESSAGE", "true");  
+    await react("✅");  
+    return reply("✅ Goodbye message enabled.");  
+}  
 
-        await react("✅");
-        return reply("✅ Goodbye message enabled.");
-    }
+// OFF  
+if (cmd === "off" || cmd === "disable" || cmd === "false") {  
+    await setGroupSetting(from, "GOODBYE_MESSAGE", "false");  
+    await react("✅");  
+    return reply("❌ Goodbye message disabled.");  
+}  
 
-    // OFF
-    if (["off", "disable", "false"].includes(arg?.toLowerCase())) {
-        await setGroupSetting(from, "GOODBYE_MESSAGE", "false");
+// GET  
+if (cmd === "get") {  
+    const status = await getGroupSetting(from, "GOODBYE_MESSAGE") || "false";  
+    const msg = (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) || "No goodbye message set.";  
 
-        await react("✅");
-        return reply("✅ Goodbye message disabled.");
-    }
+    return reply(
 
-    // GET
-    if (arg?.toLowerCase() === "get") {
-        const status = await getGroupSetting(from, "GOODBYE_MESSAGE");
+`GOODBYE: ${status}
 
-        const msg =
-            (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) ||
-            "No goodbye message set.";
-
-        return reply(
-`GOODBYE: ${status || "false"}
-
-Current Message:
-
+Message:
 ${msg}
 
 Commands:
@@ -685,7 +679,7 @@ Commands:
 .goodbye off
 .goodbye get
 .goodbye test
-.goodbye <custom message>
+.goodbye <message>
 
 Placeholders:
 &mention
@@ -696,69 +690,168 @@ Placeholders:
 &gpp
 
 Last line URL = image`
-        );
-    }
-
-    // TEST
-    if (arg?.toLowerCase() === "test") {
-
-        const raw =
-            (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) ||
-            "&mention left &gname 👋";
-
-        const metadata = await Gifted.groupMetadata(from);
-
-        const userJid = conText.sender;
-        const userNumber = userJid.split("@")[0];
-
-        const userPP = await getProfilePic(Gifted, userJid);
-        const groupPP = await getProfilePic(Gifted, from);
-
-        const ctx = {
-            mention: `@${userNumber}`,
-            gname: metadata.subject || "Unknown Group",
-            desc: metadata.desc || "No description",
-            size: metadata.participants?.length || 0,
-            pp: userPP,
-            gpp: groupPP
-        };
-
-        const { text, image } = extractMedia(raw, ctx);
-
-        if (image) {
-            return Gifted.sendMessage(from, {
-                image: { url: image },
-                caption: text,
-                mentions: [userJid],
-            });
-        } else {
-            return Gifted.sendMessage(from, {
-                text,
-                mentions: [userJid],
-            });
-        }
-    }
-
-    // SET CUSTOM MESSAGE
-    if (!arg) {
-        return reply(
-`Usage:
-.goodbye on
-.goodbye off
-.goodbye get
-.goodbye test
-.goodbye <message>`
-        );
-    }
-
-    await setGroupSetting(from, "GOODBYE_MESSAGE_TEXT", q);
-
-    await react("✅");
-
-    return reply("✅ Custom goodbye message saved.");
-},
 );
+}
 
+// TEST  
+if (cmd === "test") {  
+    const raw = (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) ||  
+        "&mention left &gname 👋";  
+
+    const metadata = await Gifted.groupMetadata(from);  
+
+    const userJid = conText.sender;  
+    const userNumber = userJid.split("@")[0];  
+
+    const userPP = await getProfilePic(Gifted, userJid);  
+    const groupPP = await getProfilePic(Gifted, from);  
+
+    const ctx = {  
+        mention: `@${userNumber}`,  
+        gname: metadata.subject || "Unknown Group",  
+        desc: metadata.desc || "No description",  
+        size: metadata.participants?.length || 0,  
+        pp: userPP,  
+        gpp: groupPP,  
+    };  
+
+    const { text, image } = extractMedia(raw, ctx);  
+
+    if (image) {  
+        return Gifted.sendMessage(from, {  
+            image: { url: image },  
+            caption: text,  
+            mentions: [userJid],  
+        });  
+    }  
+
+    return Gifted.sendMessage(from, {  
+        text,  
+        mentions: [userJid],  
+    });  
+}  
+
+// SET MESSAGE  
+if (!q || ["on","off","get","test"].includes(cmd)) {  
+    return reply("❌ Usage: .goodbye on/off/get/test/message");  
+}  
+
+await setGroupSetting(from, "GOODBYE_MESSAGE_TEXT", q);  
+await react("✅");  
+return reply("✅ Custom goodbye message saved.");
+
+});
+
+gmd(
+{
+pattern: "welcome",
+aliases: ["setwelcome", "welcomemsg"],
+react: "👋",
+category: "group",
+description: "Manage welcome message",
+},
+async (from, Gifted, conText) => {
+const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
+
+if (!isGroup) return reply("❌ This command only works in groups!");  
+if (!isSuperUser && !isAdmin) return reply("❌ Admin/Owner Only Command!");  
+
+const arg = (q || "").trim();  
+const cmd = arg.toLowerCase();  
+
+// ON  
+if (cmd === "on" || cmd === "enable" || cmd === "true") {  
+    await setGroupSetting(from, "WELCOME_MESSAGE", "true");  
+    await react("✅");  
+    return reply("✅ Welcome message enabled.");  
+}  
+
+// OFF  
+if (cmd === "off" || cmd === "disable" || cmd === "false") {  
+    await setGroupSetting(from, "WELCOME_MESSAGE", "false");  
+    await react("✅");  
+    return reply("❌ Welcome message disabled.");  
+}  
+
+// GET  
+if (cmd === "get") {  
+    const status = await getGroupSetting(from, "WELCOME_MESSAGE") || "false";  
+    const msg = (await getGroupSetting(from, "WELCOME_MESSAGE_TEXT")) || "No welcome message set.";  
+
+    return reply(
+
+`WELCOME: ${status}
+
+Message:
+${msg}
+
+Commands:
+.welcome on
+.welcome off
+.welcome get
+.welcome test
+.welcome <message>
+
+Placeholders:
+&mention
+&gname
+&desc
+&size
+&pp
+&gpp
+
+Last line URL = image`
+);
+}
+
+// TEST  
+if (cmd === "test") {  
+    const raw = (await getGroupSetting(from, "WELCOME_MESSAGE_TEXT")) ||  
+        "&mention Welcome to &gname 🎉";  
+
+    const metadata = await Gifted.groupMetadata(from);  
+
+    const userJid = conText.sender;  
+    const userNumber = userJid.split("@")[0];  
+
+    const userPP = await getProfilePic(Gifted, userJid);  
+    const groupPP = await getProfilePic(Gifted, from);  
+
+    const ctx = {  
+        mention: `@${userNumber}`,  
+        gname: metadata.subject || "Unknown Group",  
+        desc: metadata.desc || "No description",  
+        size: metadata.participants?.length || 0,  
+        pp: userPP,  
+        gpp: groupPP,  
+    };  
+
+    const { text, image } = extractMedia(raw, ctx);  
+
+    if (image) {  
+        return Gifted.sendMessage(from, {  
+            image: { url: image },  
+            caption: text,  
+            mentions: [userJid],  
+        });  
+    }  
+
+    return Gifted.sendMessage(from, {  
+        text,  
+        mentions: [userJid],  
+    });  
+}  
+
+// SET MESSAGE  
+if (!q || ["on","off","get","test"].includes(cmd)) {  
+    return reply("❌ Usage: .welcome on/off/get/test/message");  
+}  
+
+await setGroupSetting(from, "WELCOME_MESSAGE_TEXT", q);  
+await react("✅");  
+return reply("✅ Custom welcome message saved.");
+
+});
 gmd(
   {
     pattern: "welcomemessage",
