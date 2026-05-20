@@ -33,6 +33,7 @@
     "dotenv": "*",
     "canvacord": "*",
     "express": "^4.19.2",
+     "link-preview-js": "^3.0.4",
     "ffmpeg-static": "*",
     "file-type": "17.1.6",
     "fluent-ffmpeg": "*",
