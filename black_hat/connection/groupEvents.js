@@ -126,40 +126,79 @@ const extractMedia = (raw, ctx = {}) => {
     let text = raw.replace(/\\n/g, "\n");
     console.log("[extractMedia] after \\n fix:", JSON.stringify(text));
 
+    // Step 1: Replace &pp / &gpp FIRST — keep them on their own token
+    // so we can detect if user put them alone on a line
+    const ppUrl  = ctx.pp  || "";
+    const gppUrl = ctx.gpp || "";
+
+    // Check if &pp or &gpp is the ONLY thing on its line (image placeholder usage)
+    // Replace those lines with a special marker, extract URL as image
+    let image = null;
+
+    const lines = text.split("\n");
+    const cleanLines = [];
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+
+        // If this line is ONLY &gpp → use gpp as image, remove line
+        if (trimmed === "&gpp") {
+            if (!image && gppUrl) {
+                image = gppUrl;
+                console.log("[extractMedia] &gpp on own line → image:", image);
+            }
+            continue; // remove this line from text
+        }
+
+        // If this line is ONLY &pp → use pp as image, remove line
+        if (trimmed === "&pp") {
+            if (!image && ppUrl) {
+                image = ppUrl;
+                console.log("[extractMedia] &pp on own line → image:", image);
+            }
+            continue; // remove this line from text
+        }
+
+        cleanLines.push(line);
+    }
+
+    // Step 2: Now do all replacements on remaining lines
     const map = {
         "&mention": ctx.mention || "",
         "&gname":   ctx.gname   || "",
         "&desc":    ctx.desc    || "",
         "&size":    String(ctx.size || ""),
-        "&pp":      ctx.pp      || "",
-        "&gpp":     ctx.gpp     || "",
+        "&pp":      ppUrl,
+        "&gpp":     gppUrl,
     };
 
+    let joined = cleanLines.join("\n");
     for (const key in map) {
-        text = text.split(key).join(map[key]);
+        joined = joined.split(key).join(map[key]);
     }
 
-    console.log("[extractMedia] after placeholder replace:", JSON.stringify(text));
+    console.log("[extractMedia] after placeholder replace:", JSON.stringify(joined));
 
-    // Last non-empty line — if URL use as image
-    const lines = text.split("\n");
-    let image = null;
+    // Step 3: If no image yet, check last line for hardcoded URL
+    if (!image) {
+        const finalLines = joined.split("\n");
+        let lastIdx = finalLines.length - 1;
+        while (lastIdx >= 0 && finalLines[lastIdx].trim() === "") lastIdx--;
 
-    let lastIdx = lines.length - 1;
-    while (lastIdx >= 0 && lines[lastIdx].trim() === "") lastIdx--;
+        const lastLine = finalLines[lastIdx]?.trim();
+        console.log("[extractMedia] lastLine check:", JSON.stringify(lastLine));
 
-    const lastLine = lines[lastIdx]?.trim();
-    console.log("[extractMedia] lastLine detected:", JSON.stringify(lastLine));
-
-    if (lastLine && /^https?:\/\/\S+$/i.test(lastLine)) {
-        image = lastLine;
-        lines.splice(lastIdx, 1);
-        console.log("[extractMedia] image URL extracted:", image);
-    } else {
-        console.log("[extractMedia] no image URL found in last line");
+        if (lastLine && /^https?:\/\/\S+$/i.test(lastLine)) {
+            image = lastLine;
+            finalLines.splice(lastIdx, 1);
+            joined = finalLines.join("\n");
+            console.log("[extractMedia] hardcoded URL extracted as image:", image);
+        } else {
+            console.log("[extractMedia] no image URL found");
+        }
     }
 
-    const finalText = lines.join("\n").trimEnd();
+    const finalText = joined.trimEnd();
     console.log("[extractMedia] final text:", JSON.stringify(finalText));
     console.log("[extractMedia] final image:", image);
 
