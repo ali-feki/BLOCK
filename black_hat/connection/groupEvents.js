@@ -127,30 +127,30 @@ const extractMedia = (raw, ctx = {}) => {
     const lines = text.split("\n");
     const clean = [];
 
-    const imageRegex = /^https?:\/\/\S+\.(jpg|jpeg|png|webp)(\?.*)?$/i;
-    const waRegex = /^https?:\/\/pps\.whatsapp\.net\S+/i;
+    const imgUrlRegex = /^https?:\/\/\S+\.(jpg|jpeg|png|webp)(\?.*)?$/i;
+    const waUrlRegex = /^https?:\/\/pps\.whatsapp\.net\S+/i;
 
-    // PASS 1: detect &pp / &gpp standalone
+    // PASS 1: detect media triggers FIRST
     for (const line of lines) {
         const t = line.trim();
 
         if (t === "&pp") {
-            image = image || pp;
+            if (!image && pp) image = pp;
             continue;
         }
 
         if (t === "&gpp") {
-            image = image || gpp;
+            if (!image && gpp) image = gpp;
             continue;
         }
 
         clean.push(line);
     }
 
-    text = clean.join("\n");
+    let joined = clean.join("\n");
 
-    // PASS 2: placeholder replace (OLD BOT STYLE)
-    text = text
+    // PASS 2: replace placeholders
+    joined = joined
         .replace(/&mention/g, ctx.mention || "")
         .replace(/&gname/g, ctx.gname || "")
         .replace(/&desc/g, ctx.desc || "")
@@ -158,31 +158,30 @@ const extractMedia = (raw, ctx = {}) => {
         .replace(/&pp/g, "")
         .replace(/&gpp/g, "");
 
-    const finalLines = text.split("\n");
+    const finalLines = joined.split("\n");
 
-    // PASS 3: last line image detection
-    let lastIdx = finalLines.length - 1;
-    while (lastIdx >= 0 && finalLines[lastIdx].trim() === "") lastIdx--;
+    // PASS 3: detect LAST LINE image URL (important fix)
+    let last = finalLines.length - 1;
+    while (last >= 0 && finalLines[last].trim() === "") last--;
 
-    const last = finalLines[lastIdx]?.trim();
+    const lastLine = finalLines[last]?.trim();
 
-    if (!image && (imageRegex.test(last) || waRegex.test(last))) {
-        image = last;
-        finalLines.splice(lastIdx, 1);
+    if (!image && (imgUrlRegex.test(lastLine) || waUrlRegex.test(lastLine))) {
+        image = lastLine;
+        finalLines.splice(last, 1);
     }
 
-    text = finalLines.join("\n");
+    joined = finalLines.join("\n");
 
-    // PASS 4: CLEAN leaks (IMPORTANT)
-    text = text
-        .replace(waRegex, "")
-        .replace(imageRegex, "")
+    // PASS 4: HARD CLEAN (removes leaks like your issue)
+    joined = joined
+        .replace(waUrlRegex, "")
+        .replace(imgUrlRegex, "")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
 
-    return { text, image };
+    return { text: joined, image };
 };
-
 // Fetch WhatsApp CDN image as buffer
 const fetchImageBuffer = async (url) => {
     if (!url || url === DEFAULT_PLACEHOLDER) return null;
