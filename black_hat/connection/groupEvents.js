@@ -3,7 +3,6 @@ const { getSetting } = require("../database/settings");
 const { getGroupSetting } = require("../database/groupSettings");
 const { getSudoNumbers } = require("../database/sudo");
 const { sendButtons } = require("gifted-btns");
-const axios = require("axios");
 const { cachedGroupMetadata, getLidMapping } = require("./groupCache");
 
 const DEV_NUMBERS = ['255634523742', '255794469700', '255781755667'];
@@ -114,80 +113,124 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
     }
 };
 
-
-// Replace old extractMedia with this
+// ─── FIXED: multiline + image ────────────────────────────────────────────────
 const extractMedia = (raw, ctx = {}) => {
-    if (!raw) return { text: "", image: null };
+    if (!raw) {
+        console.log("[extractMedia] raw is empty/null — returning empty");
+        return { text: "", image: null };
+    }
+
+    console.log("[extractMedia] raw from DB:", JSON.stringify(raw));
+
+    // Fix escaped newlines saved from DB (\\n → real \n)
+    let text = raw.replace(/\\n/g, "\n");
+    console.log("[extractMedia] after \\n fix:", JSON.stringify(text));
 
     const map = {
         "&mention": ctx.mention || "",
-        "&gname": ctx.gname || "",
-        "&desc": ctx.desc || "",
-        "&size": String(ctx.size || ""),
-        "&pp": ctx.pp || "",
-        "&gpp": ctx.gpp || "",
+        "&gname":   ctx.gname   || "",
+        "&desc":    ctx.desc    || "",
+        "&size":    String(ctx.size || ""),
+        "&pp":      ctx.pp      || "",
+        "&gpp":     ctx.gpp     || "",
     };
 
-    let text = raw;
     for (const key in map) {
         text = text.split(key).join(map[key]);
     }
 
-    // Last non-empty line check
-    let lines = text.split("\n");
+    console.log("[extractMedia] after placeholder replace:", JSON.stringify(text));
+
+    // Last non-empty line — if URL use as image
+    const lines = text.split("\n");
     let image = null;
 
     let lastIdx = lines.length - 1;
     while (lastIdx >= 0 && lines[lastIdx].trim() === "") lastIdx--;
 
     const lastLine = lines[lastIdx]?.trim();
+    console.log("[extractMedia] lastLine detected:", JSON.stringify(lastLine));
+
     if (lastLine && /^https?:\/\/\S+$/i.test(lastLine)) {
         image = lastLine;
         lines.splice(lastIdx, 1);
+        console.log("[extractMedia] image URL extracted:", image);
+    } else {
+        console.log("[extractMedia] no image URL found in last line");
     }
 
-    return { text: lines.join("\n").trim(), image };
+    const finalText = lines.join("\n").trimEnd();
+    console.log("[extractMedia] final text:", JSON.stringify(finalText));
+    console.log("[extractMedia] final image:", image);
+
+    return { text: finalText, image };
 };
 
-// Add this helper
+// Fetch WhatsApp CDN image as buffer using built-in https (no extra deps)
 const fetchImageBuffer = async (url) => {
+    if (!url || url === DEFAULT_PLACEHOLDER) {
+        console.log("[fetchImageBuffer] skipped — no URL or placeholder");
+        return null;
+    }
+    console.log("[fetchImageBuffer] fetching:", url);
     try {
-        const res = await axios.get(url, {
-            responseType: "arraybuffer",
-            timeout: 8000,
-            headers: {
-                "User-Agent": "WhatsApp/2.23.20.0",
-            },
+        const https = require("https");
+        const http  = require("http");
+        const mod   = url.startsWith("https") ? https : http;
+        return await new Promise((resolve) => {
+            mod.get(url, { headers: { "User-Agent": "WhatsApp/2.23.20.0" } }, (res) => {
+                console.log("[fetchImageBuffer] HTTP status:", res.statusCode);
+                const chunks = [];
+                res.on("data", (c) => chunks.push(c));
+                res.on("end",  () => {
+                    const buf = Buffer.concat(chunks);
+                    console.log("[fetchImageBuffer] buffer size:", buf.length, "bytes");
+                    resolve(buf);
+                });
+                res.on("error", (e) => {
+                    console.log("[fetchImageBuffer] stream error:", e.message);
+                    resolve(null);
+                });
+            }).on("error", (e) => {
+                console.log("[fetchImageBuffer] request error:", e.message);
+                resolve(null);
+            });
         });
-        return Buffer.from(res.data);
     } catch (e) {
+        console.log("[fetchImageBuffer] exception:", e.message);
         return null;
     }
 };
 
-// Replace sendWelcomeGoodbye logic — use this helper for both
+// Send with image, fallback to text only
 const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
+    console.log("[sendGroupEvent] groupJid:", groupJid);
+    console.log("[sendGroupEvent] image:", image);
+    console.log("[sendGroupEvent] text:", JSON.stringify(text));
     try {
         if (image) {
+            console.log("[sendGroupEvent] attempting image send...");
             const buffer = await fetchImageBuffer(image);
-            if (buffer) {
+            if (buffer && buffer.length > 0) {
+                console.log("[sendGroupEvent] sending image with caption");
                 await Gifted.sendMessage(groupJid, {
                     image: buffer,
                     caption: text,
                     mentions,
                 });
+                console.log("[sendGroupEvent] image sent successfully ✅");
                 return;
             }
+            console.log("[sendGroupEvent] buffer empty/null — falling back to text");
         }
-        // Fallback: text only
-        await Gifted.sendMessage(groupJid, {
-            text,
-            mentions,
-        });
+        console.log("[sendGroupEvent] sending text only");
+        await Gifted.sendMessage(groupJid, { text, mentions });
+        console.log("[sendGroupEvent] text sent successfully ✅");
     } catch (err) {
-        console.error("sendGroupEvent error:", err.message);
+        console.error("[sendGroupEvent] error:", err.message);
     }
 };
+// ─────────────────────────────────────────────────────────────────────────────
 
 const processedEvents = new Map();
 const EVENT_DEDUP_INTERVAL = 5000;
@@ -253,77 +296,100 @@ const setupGroupEventsListeners = (Gifted) => {
                 groupMeta.size || groupMeta.participants?.length || 0;
 
             switch (action) {
+
                 case "add": {
-    const welcomeEnabled = await getGroupSetting(groupJid, "WELCOME_MESSAGE");
-    const isWelcomeOn =
-        welcomeEnabled &&
-        ["true", "on", "1", "yes"].includes(String(welcomeEnabled).toLowerCase().trim());
-    if (!isWelcomeOn) return;
+                    console.log("[WELCOME] member add event — group:", groupJid);
+                    const welcomeEnabled = await getGroupSetting(groupJid, "WELCOME_MESSAGE");
+                    console.log("[WELCOME] WELCOME_MESSAGE setting:", welcomeEnabled);
+                    const isWelcomeOn =
+                        welcomeEnabled &&
+                        ["true", "on", "1", "yes"].includes(String(welcomeEnabled).toLowerCase().trim());
+                    if (!isWelcomeOn) {
+                        console.log("[WELCOME] welcome is OFF — skipping");
+                        return;
+                    }
 
-    for (const participant of participants) {
-        try {
-            const userJid = await getJidFromParticipant(Gifted, participant, groupMeta);
-            const userNumber = formatJid(userJid);
-            const profilePic = await getProfilePic(Gifted, userJid);
-            const groupPP = await getProfilePic(Gifted, groupJid);
+                    const rawTemplate = (await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT"))
+                        || "&mention Welcome 🎉";
+                    console.log("[WELCOME] rawTemplate from DB:", JSON.stringify(rawTemplate));
 
-            const raw =
-                (await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT")) ||
-                "&mention Welcome 🎉";
+                    for (const participant of participants) {
+                        try {
+                            const userJid    = await getJidFromParticipant(Gifted, participant, groupMeta);
+                            const userNumber = formatJid(userJid);
+                            console.log("[WELCOME] processing participant:", userJid);
 
-            const ctx = {
-                mention: `@${userNumber}`,
-                gname: groupName,
-                desc: groupMeta.desc || "No description",
-                size: memberCount,
-                pp: profilePic,
-                gpp: groupPP,
-            };
+                            const profilePic = await getProfilePic(Gifted, userJid);
+                            const groupPP    = await getProfilePic(Gifted, groupJid);
+                            console.log("[WELCOME] pp:", profilePic);
+                            console.log("[WELCOME] gpp:", groupPP);
 
-            const { text, image } = extractMedia(raw, ctx);
-            await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
-        } catch (err) {
-            console.error("Welcome error:", err.message);
-        }
-    }
-    break;
-}
+                            const ctx = {
+                                mention: `@${userNumber}`,
+                                gname:   groupName,
+                                desc:    groupMeta.desc || "No description",
+                                size:    memberCount,
+                                pp:      profilePic,
+                                gpp:     groupPP,
+                            };
+
+                            const { text, image } = extractMedia(rawTemplate, ctx);
+                            console.log("[WELCOME] extracted text:", JSON.stringify(text));
+                            console.log("[WELCOME] extracted image:", image);
+                            await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
+                        } catch (err) {
+                            console.error("[WELCOME] error for participant:", err.message);
+                        }
+                    }
+                    break;
+                }
 
                 case "remove": {
-    const goodbyeEnabled = await getGroupSetting(groupJid, "GOODBYE_MESSAGE");
-    const isGoodbyeOn =
-        goodbyeEnabled &&
-        ["true", "on", "1", "yes"].includes(String(goodbyeEnabled).toLowerCase().trim());
-    if (!isGoodbyeOn) return;
+                    console.log("[GOODBYE] member remove event — group:", groupJid);
+                    const goodbyeEnabled = await getGroupSetting(groupJid, "GOODBYE_MESSAGE");
+                    console.log("[GOODBYE] GOODBYE_MESSAGE setting:", goodbyeEnabled);
+                    const isGoodbyeOn =
+                        goodbyeEnabled &&
+                        ["true", "on", "1", "yes"].includes(String(goodbyeEnabled).toLowerCase().trim());
+                    if (!isGoodbyeOn) {
+                        console.log("[GOODBYE] goodbye is OFF — skipping");
+                        return;
+                    }
 
-    const raw =
-        (await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT")) ||
-        "&mention Goodbye 👋";
+                    const rawTemplate = (await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT"))
+                        || "&mention left 👋";
+                    console.log("[GOODBYE] rawTemplate from DB:", JSON.stringify(rawTemplate));
 
-    for (const participant of participants) {
-        try {
-            const userJid = await getJidFromParticipant(Gifted, participant, groupMeta);
-            const userNumber = formatJid(userJid);
-            const profilePic = await getProfilePic(Gifted, userJid);
-            const groupPP = await getProfilePic(Gifted, groupJid);
+                    for (const participant of participants) {
+                        try {
+                            const userJid    = await getJidFromParticipant(Gifted, participant, groupMeta);
+                            const userNumber = formatJid(userJid);
+                            console.log("[GOODBYE] processing participant:", userJid);
 
-            const ctx = {
-                mention: `@${userNumber}`,
-                gname: groupName,
-                desc: groupMeta.desc || "No description",
-                size: memberCount,
-                pp: profilePic,
-                gpp: groupPP,
-            };
+                            const profilePic = await getProfilePic(Gifted, userJid);
+                            const groupPP    = await getProfilePic(Gifted, groupJid);
+                            console.log("[GOODBYE] pp:", profilePic);
+                            console.log("[GOODBYE] gpp:", groupPP);
 
-            const { text, image } = extractMedia(raw, ctx);
-            await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
-        } catch (err) {
-            console.error("Goodbye error:", err.message);
-        }
-    }
-    break;
-}
+                            const ctx = {
+                                mention: `@${userNumber}`,
+                                gname:   groupName,
+                                desc:    groupMeta.desc || "No description",
+                                size:    memberCount,
+                                pp:      profilePic,
+                                gpp:     groupPP,
+                            };
+
+                            const { text, image } = extractMedia(rawTemplate, ctx);
+                            console.log("[GOODBYE] extracted text:", JSON.stringify(text));
+                            console.log("[GOODBYE] extracted image:", image);
+                            await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
+                        } catch (err) {
+                            console.error("[GOODBYE] error for participant:", err.message);
+                        }
+                    }
+                    break;
+                }
 
                 case "promote": {
                     const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
@@ -381,7 +447,6 @@ const setupGroupEventsListeners = (Gifted) => {
                                     const promotedNumber = formatJid(participantJid);
                                     const authorNumber = formatJid(authorJid);
                                     const skipParticipant = isParticipantSuperUser || isParticipantSuperAdmin;
-                                    
                                     const isAuthorProtected = isAuthorSuperAdmin || await isSuperUser(authorJid, Gifted);
                                     
                                     if (isAuthorProtected && skipParticipant) {
@@ -417,46 +482,24 @@ const setupGroupEventsListeners = (Gifted) => {
                         }
                     }
                     
-                    const groupEventsEnabled = await getGroupSetting(
-                        groupJid,
-                        "GROUP_EVENTS",
-                    );
+                    const groupEventsEnabled = await getGroupSetting(groupJid, "GROUP_EVENTS");
                     if (groupEventsEnabled !== "true") break;
 
                     for (const participant of participants) {
                         try {
-                            const participantJid = await getJidFromParticipant(
-                                Gifted,
-                                participant,
-                                groupMeta,
-                            );
-                            const authorJid = author
-                                ? await getJidFromParticipant(
-                                      Gifted,
-                                      author,
-                                      groupMeta,
-                                  )
-                                : null;
+                            const participantJid = await getJidFromParticipant(Gifted, participant, groupMeta);
+                            const authorJid = author ? await getJidFromParticipant(Gifted, author, groupMeta) : null;
                             const promotedNumber = formatJid(participantJid);
-                            const authorNumber = authorJid
-                                ? formatJid(authorJid)
-                                : "System";
-
+                            const authorNumber = authorJid ? formatJid(authorJid) : "System";
                             const mentionsList = [participantJid];
                             if (authorJid) mentionsList.push(authorJid);
 
-                            // 👑 PROMOTE
-                           const promoteText = `@${authorNumber} *PROMOTED* @${promotedNumber}`;
-
                             await Gifted.sendMessage(groupJid, {
-                                text: promoteText,
+                                text: `@${authorNumber} *PROMOTED* @${promotedNumber}`,
                                 mentions: mentionsList,
                             });
                         } catch (err) {
-                            console.error(
-                                "Promote notification error:",
-                                err.message,
-                            );
+                            console.error("Promote notification error:", err.message);
                         }
                     }
                     break;
@@ -559,46 +602,24 @@ const setupGroupEventsListeners = (Gifted) => {
                         }
                     }
                     
-                    const groupEventsEnabled = await getGroupSetting(
-                        groupJid,
-                        "GROUP_EVENTS",
-                    );
+                    const groupEventsEnabled = await getGroupSetting(groupJid, "GROUP_EVENTS");
                     if (groupEventsEnabled !== "true") break;
 
                     for (const participant of participants) {
                         try {
-                            const participantJid = await getJidFromParticipant(
-                                Gifted,
-                                participant,
-                                groupMeta,
-                            );
-                            const authorJid = author
-                                ? await getJidFromParticipant(
-                                      Gifted,
-                                      author,
-                                      groupMeta,
-                                  )
-                                : null;
+                            const participantJid = await getJidFromParticipant(Gifted, participant, groupMeta);
+                            const authorJid = author ? await getJidFromParticipant(Gifted, author, groupMeta) : null;
                             const demotedNumber = formatJid(participantJid);
-                            const authorNumber = authorJid
-                                ? formatJid(authorJid)
-                                : "System";
-
+                            const authorNumber = authorJid ? formatJid(authorJid) : "System";
                             const mentionsList = [participantJid];
                             if (authorJid) mentionsList.push(authorJid);
 
-                            // 📉 DEMOTE
-                            const demoteText = `@${authorNumber} *DEMOTED* @${demotedNumber}`;
-
                             await Gifted.sendMessage(groupJid, {
-                                text: demoteText,
+                                text: `@${authorNumber} *DEMOTED* @${demotedNumber}`,
                                 mentions: mentionsList,
                             });
                         } catch (err) {
-                            console.error(
-                                "Demote notification error:",
-                                err.message,
-                            );
+                            console.error("Demote notification error:", err.message);
                         }
                     }
                     break;
@@ -608,7 +629,6 @@ const setupGroupEventsListeners = (Gifted) => {
             console.error("Group events handler error:", error.message);
         }
     });
-
 };
 
 module.exports = {
