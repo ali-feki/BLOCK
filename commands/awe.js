@@ -21,7 +21,7 @@ const {
   deleteAllNotes,
   NotesDB,
 } = require("../black_hat/database/notes");
-
+const { getProfilePic, extractMedia, sendGroupEvent } = require("../black_hat/connection/groupEvents");
 // ─── WELCOME ──────────────────────────────────────────────────────────────────
 gmd(
     {
