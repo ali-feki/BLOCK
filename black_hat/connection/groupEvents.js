@@ -200,21 +200,28 @@ const fetchImageBuffer = async (url) => {
     }
 };
 
+/
 // Send with image if available, fallback to text
 const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
     try {
+
+        // SEND IMAGE
         if (image && typeof image === "string") {
-    const buffer = await fetchImageBuffer(image);
-    if (buffer && buffer.length > 0) {
+            await Gifted.sendMessage(groupJid, {
+                image: { url: image },
+                caption: text,
+                mentions,
+            });
+
+            return;
+        }
+
+        // FALLBACK TEXT
         await Gifted.sendMessage(groupJid, {
-            image: buffer,
-            caption: text,
+            text,
             mentions,
         });
-        return;
-    }
-}
-        await Gifted.sendMessage(groupJid, { text, mentions });
+
     } catch (err) {
         console.error("sendGroupEvent error:", err.message);
     }
