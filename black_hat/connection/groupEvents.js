@@ -147,7 +147,7 @@ const extractMedia = (raw, ctx = {}) => {
 
     // PASS 4: WhatsApp CDN URLs jo text mein reh gayi hain — clean karo
     joined = joined
-        .replace(/https?:\/\/pps\.whatsapp\.net\S*/gi, "")
+        .replace(/https?:\/\/pps\.whatsapp\.net[^\s]*/gi, "")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
 
@@ -183,18 +183,44 @@ const fetchImageBuffer = async (url) => {
 // ─── sendGroupEvent ───────────────────────────────────────────────────────────
 const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
     try {
+
+        // TRY 1 — direct URL (best for WhatsApp profile pics)
         if (image) {
-            const buffer = await fetchImageBuffer(image);
-            if (buffer && buffer.length > 0) {
+            try {
                 await Gifted.sendMessage(groupJid, {
-                    image: buffer,   // buffer — { url: image } kaam nahi karta CDN pe
+                    image: { url: image },
                     caption: text,
                     mentions,
                 });
+
+                return;
+
+            } catch (e) {
+                console.error("[sendGroupEvent] direct url failed:", e.message);
+            }
+        }
+
+        // TRY 2 — buffer fallback
+        if (image) {
+            const buffer = await fetchImageBuffer(image);
+
+            if (buffer && buffer.length > 0) {
+                await Gifted.sendMessage(groupJid, {
+                    image: buffer,
+                    caption: text,
+                    mentions,
+                });
+
                 return;
             }
         }
-        await Gifted.sendMessage(groupJid, { text, mentions });
+
+        // LAST fallback
+        await Gifted.sendMessage(groupJid, {
+            text,
+            mentions,
+        });
+
     } catch (err) {
         console.error("sendGroupEvent error:", err.message);
     }
