@@ -113,13 +113,14 @@ const extractMedia = (raw, ctx = {}) => {
     for (const line of lines) {
         const t = line.trim();
         if (t === "&gpp") {
-            if (!image && gpp && gpp !== DEFAULT_PLACEHOLDER) image = gpp;
-            continue;
-        }
-        if (t === "&pp") {
-            if (!image && pp && pp !== DEFAULT_PLACEHOLDER) image = pp;
-            continue;
-        }
+    image = gpp || null;
+    continue;
+}
+
+if (t === "&pp") {
+    image = pp || null;
+    continue;
+}
         clean.push(line);
     }
 
@@ -203,6 +204,7 @@ const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
         // TRY 2 — buffer fallback
         if (image) {
             const buffer = await fetchImageBuffer(image);
+            console.log("IMAGE URL:", image);
 
             if (buffer && buffer.length > 0) {
                 await Gifted.sendMessage(groupJid, {
