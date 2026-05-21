@@ -115,116 +115,101 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
 
 // ─── FIXED: multiline + image support ────────────────────────────────────────
 const extractMedia = (raw, ctx = {}) => {
-    if (!raw) return { text: "", image: null };
+if (!raw) return { text: "", image: null };
 
-    let text = raw.replace(/\\n/g, "\n");
+let text = raw.replace(/\n/g, "\n");
 
-    const pp = ctx.pp || "";
-    const gpp = ctx.gpp || "";
+const pp = ctx.pp || "";
+const gpp = ctx.gpp || "";
 
-    let image = null;
+let image = null;
 
-    const lines = text.split("\n");
-    const clean = [];
+const lines = text.split("\n");
+const clean = [];
 
-    const imgUrlRegex = /^https?:\/\/\S+\.(jpg|jpeg|png|webp)(\?.*)?$/i;
-    const waUrlRegex = /^https?:\/\/pps\.whatsapp\.net\S+/i;
+const imgUrlRegex = /^https?://\S+.(jpg|jpeg|png|webp)(?.*)?$/i;
+const waUrlRegex = /^https?://pps.whatsapp.net\S+/i;
 
-    // PASS 1: detect media triggers FIRST
-    for (const line of lines) {
-        const t = line.trim();
+// PASS 1: detect media triggers FIRST
+for (const line of lines) {
+const t = line.trim();
 
-        if (t === "&pp") {
-            if (!image && pp) image = pp;
-            continue;
-        }
+if (t === "&pp") {
+if (!image && pp) image = pp;
+continue;
+}
 
-        if (t === "&gpp") {
-            if (!image && gpp) image = gpp;
-            continue;
-        }
+if (t === "&gpp") {
+if (!image && gpp) image = gpp;
+continue;
+}
 
-        clean.push(line);
-    }
+clean.push(line);
 
-    let joined = clean.join("\n");
+}
 
-    // PASS 2: replace placeholders
-    joined = joined
-        .replace(/&mention/g, ctx.mention || "")
-        .replace(/&gname/g, ctx.gname || "")
-        .replace(/&desc/g, ctx.desc || "")
-        .replace(/&size/g, String(ctx.size || ""))
-        .replace(/&pp/g, "")
-        .replace(/&gpp/g, "");
+let joined = clean.join("\n");
 
-    const finalLines = joined.split("\n");
+// PASS 2: replace placeholders
+joined = joined
+.replace(/&mention/g, ctx.mention || "")
+.replace(/&gname/g, ctx.gname || "")
+.replace(/&desc/g, ctx.desc || "")
+.replace(/&size/g, String(ctx.size || ""))
+.replace(/&pp/g, "")
+.replace(/&gpp/g, "");
 
-    // PASS 3: detect LAST LINE image URL (important fix)
-    let last = finalLines.length - 1;
-    while (last >= 0 && finalLines[last].trim() === "") last--;
+const finalLines = joined.split("\n");
 
-    const lastLine = finalLines[last]?.trim();
+// PASS 3: detect LAST LINE image URL (important fix)
+let last = finalLines.length - 1;
+while (last >= 0 && finalLines[last].trim() === "") last--;
 
-    if (!image && (imgUrlRegex.test(lastLine) || waUrlRegex.test(lastLine))) {
-        image = lastLine;
-        finalLines.splice(last, 1);
-    }
+const lastLine = finalLines[last]?.trim();
 
-    joined = finalLines.join("\n");
+if (!image && (imgUrlRegex.test(lastLine) || waUrlRegex.test(lastLine))) {
+image = lastLine;
+finalLines.splice(last, 1);
+}
 
-    // PASS 4: HARD CLEAN (removes leaks like your issue)
-    joined = joined
-        .replace(waUrlRegex, "")
-        .replace(imgUrlRegex, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+joined = finalLines.join("\n");
 
-    return { text: joined, image };
-};
-// Fetch WhatsApp CDN image as buffer
-const fetchImageBuffer = async (url) => {
-    if (!url || url === DEFAULT_PLACEHOLDER) return null;
-    try {
-        const https = require("https");
-        return await new Promise((resolve) => {
-            https.get(url, { headers: { "User-Agent": "WhatsApp/2.23.20.0" } }, (res) => {
-                const chunks = [];
-                res.on("data", (chunk) => chunks.push(chunk));
-                res.on("end", () => resolve(Buffer.concat(chunks)));
-                res.on("error", () => resolve(null));
-            }).on("error", () => resolve(null));
-        });
-    } catch {
-        return null;
-    }
+// PASS 4: HARD CLEAN (removes leaks like your issue)
+joined = joined
+.replace(waUrlRegex, "")
+.replace(imgUrlRegex, "")
+.replace(/\n{3,}/g, "\n\n")
+.trim();
+
+return { text: joined, image };
 };
 
-/
 // Send with image if available, fallback to text
 const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
-    try {
+try {
 
-        // SEND IMAGE
-        if (image && typeof image === "string") {
-            await Gifted.sendMessage(groupJid, {
-                image: { url: image },
-                caption: text,
-                mentions,
-            });
+// SEND IMAGE
+if (image && typeof image === "string") {
 
-            return;
-        }
+await Gifted.sendMessage(groupJid, {    
+        image: { url: image },    
+        caption: text,    
+        mentions,    
+    });    
 
-        // FALLBACK TEXT
-        await Gifted.sendMessage(groupJid, {
-            text,
-            mentions,
-        });
+    return;    
+}    
 
-    } catch (err) {
-        console.error("sendGroupEvent error:", err.message);
-    }
+// FALLBACK TEXT    
+await Gifted.sendMessage(groupJid, {    
+    text,    
+    mentions,    
+});
+
+} catch (err) {
+console.error("sendGroupEvent error:", err.message);
+}
+
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
