@@ -23,6 +23,8 @@ const {
 } = require("../black_hat/database/notes");
 const { getProfilePic, extractMedia, sendGroupEvent } = require("../black_hat/connection/groupEvents");
 // ─── WELCOME ──────────────────────────────────────────────────────────────────
+
+// ─── WELCOME ──────────────────────────────────────────────────────────────────
 gmd(
     {
         pattern: "welcome",
@@ -38,23 +40,27 @@ gmd(
         if (!isSuperUser && !isAdmin) return reply("❌ Admin only!");
 
         const arg = (q || "").trim();
-        const cmd = arg.split("\n")[0].toLowerCase().trim(); // sirf pehli line se cmd lo
 
-        if (cmd === "on" || cmd === "enable" || cmd === "true") {
+        // cmd sirf pehli line se lo — baaki message ho sakta hai
+        const firstLine = arg.split("\n")[0].trim().toLowerCase();
+
+        if (firstLine === "on" || firstLine === "enable" || firstLine === "true") {
             await setGroupSetting(from, "WELCOME_MESSAGE", "true");
             await react("✅");
             return reply("✅ Welcome message enabled.");
         }
 
-        if (cmd === "off" || cmd === "disable" || cmd === "false") {
+        if (firstLine === "off" || firstLine === "disable" || firstLine === "false") {
             await setGroupSetting(from, "WELCOME_MESSAGE", "false");
             await react("✅");
             return reply("❌ Welcome message disabled.");
         }
 
-        if (cmd === "get") {
+        if (firstLine === "get") {
             const status = (await getGroupSetting(from, "WELCOME_MESSAGE")) || "false";
-            const msg = (await getGroupSetting(from, "WELCOME_MESSAGE_TEXT")) || "Not set.";
+            // DB se parhke display ke liye \\n wapas \n karo
+            const raw = (await getGroupSetting(from, "WELCOME_MESSAGE_TEXT")) || "Not set.";
+            const msg = raw.replace(/\\n/g, "\n");
             return reply(
 `*WELCOME:* ${status}
 
@@ -66,18 +72,19 @@ ${msg}
 .welcome <message>
 
 *Placeholders:*
-&mention  &gname  &desc  &size
+&mention &gname &desc &size
 
-*Image:* Put &pp or &gpp alone on last line
-Or put any image URL on last line`
+*Image:*
+&pp  ← user pic (akeli line pe)
+&gpp ← group pic (akeli line pe)`
             );
         }
 
-        if (cmd === "test") {
+        if (firstLine === "test") {
             const raw = (await getGroupSetting(from, "WELCOME_MESSAGE_TEXT"))
                 || "&mention Welcome to &gname 🎉";
-            const metadata  = await Gifted.groupMetadata(from);
-            const userJid   = conText.sender;
+            const metadata   = await Gifted.groupMetadata(from);
+            const userJid    = conText.sender;
             const userNumber = userJid.split("@")[0];
             const [userPP, groupPP] = await Promise.all([
                 getProfilePic(Gifted, userJid),
@@ -95,17 +102,18 @@ Or put any image URL on last line`
             return sendGroupEvent(Gifted, from, text, image, [userJid]);
         }
 
-        // SET — q mein newlines as-is save karo, DB handle karega
-        if (!q || ["on","off","get","test"].includes(cmd)) {
+        if (!arg || ["on","off","get","test"].includes(firstLine)) {
             return reply("❌ Usage: .welcome on/off/get/test/<message>");
         }
 
-        // KEY FIX: newlines ko \\n mein convert karke save karo
-        // taki DB string mein preserve rahein
-        const toSave = q.replace(/\n/g, "\\n");
+        // ─── KEY FIX: newlines escape karke save karo ───────────────────
+        // WhatsApp se jo q aata hai usme real \n hoti hain
+        // DB string mein ye disappear ho jati hain — isliye \\n save karo
+        const toSave = arg.replace(/\n/g, "\\n");
+        console.log("[welcome SET] saving to DB:", JSON.stringify(toSave));
         await setGroupSetting(from, "WELCOME_MESSAGE_TEXT", toSave);
         await react("✅");
-        return reply("✅ Welcome message saved.\n\nTest karo: .welcome test");
+        return reply(`✅ Welcome message saved!\n\nTest: .welcome test\n\nSaved:\n${arg}`);
     }
 );
 
@@ -125,23 +133,24 @@ gmd(
         if (!isSuperUser && !isAdmin) return reply("❌ Admin only!");
 
         const arg = (q || "").trim();
-        const cmd = arg.split("\n")[0].toLowerCase().trim();
+        const firstLine = arg.split("\n")[0].trim().toLowerCase();
 
-        if (cmd === "on" || cmd === "enable" || cmd === "true") {
+        if (firstLine === "on" || firstLine === "enable" || firstLine === "true") {
             await setGroupSetting(from, "GOODBYE_MESSAGE", "true");
             await react("✅");
             return reply("✅ Goodbye message enabled.");
         }
 
-        if (cmd === "off" || cmd === "disable" || cmd === "false") {
+        if (firstLine === "off" || firstLine === "disable" || firstLine === "false") {
             await setGroupSetting(from, "GOODBYE_MESSAGE", "false");
             await react("✅");
             return reply("❌ Goodbye message disabled.");
         }
 
-        if (cmd === "get") {
+        if (firstLine === "get") {
             const status = (await getGroupSetting(from, "GOODBYE_MESSAGE")) || "false";
-            const msg = (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) || "Not set.";
+            const raw = (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT")) || "Not set.";
+            const msg = raw.replace(/\\n/g, "\n");
             return reply(
 `*GOODBYE:* ${status}
 
@@ -153,18 +162,19 @@ ${msg}
 .goodbye <message>
 
 *Placeholders:*
-&mention  &gname  &desc  &size
+&mention &gname &desc &size
 
-*Image:* Put &pp or &gpp alone on last line
-Or put any image URL on last line`
+*Image:*
+&pp  ← user pic (akeli line pe)
+&gpp ← group pic (akeli line pe)`
             );
         }
 
-        if (cmd === "test") {
+        if (firstLine === "test") {
             const raw = (await getGroupSetting(from, "GOODBYE_MESSAGE_TEXT"))
                 || "&mention left &gname 👋";
-            const metadata  = await Gifted.groupMetadata(from);
-            const userJid   = conText.sender;
+            const metadata   = await Gifted.groupMetadata(from);
+            const userJid    = conText.sender;
             const userNumber = userJid.split("@")[0];
             const [userPP, groupPP] = await Promise.all([
                 getProfilePic(Gifted, userJid),
@@ -182,15 +192,15 @@ Or put any image URL on last line`
             return sendGroupEvent(Gifted, from, text, image, [userJid]);
         }
 
-        if (!q || ["on","off","get","test"].includes(cmd)) {
+        if (!arg || ["on","off","get","test"].includes(firstLine)) {
             return reply("❌ Usage: .goodbye on/off/get/test/<message>");
         }
 
-        // KEY FIX: newlines preserve karke save karo
-        const toSave = q.replace(/\n/g, "\\n");
+        // ─── KEY FIX: newlines escape karke save karo ───────────────────
+        const toSave = arg.replace(/\n/g, "\\n");
+        console.log("[goodbye SET] saving to DB:", JSON.stringify(toSave));
         await setGroupSetting(from, "GOODBYE_MESSAGE_TEXT", toSave);
         await react("✅");
-        return reply("✅ Goodbye message saved.\n\nTest karo: .goodbye test");
+        return reply(`✅ Goodbye message saved!\n\nTest: .goodbye test\n\nSaved:\n${arg}`);
     }
 );
-               
