@@ -85,82 +85,135 @@ async function GiftedAutoReact(emoji, ms, Gifted) {
     }
 }
 
-const DEV_NUMBERS = ['923437393822', '923147725823', '923003588997'];
+const DEV_NUMBERS = ['923437393822', '923147725823'];
+
+const extractLinks = (text = "") => {
+    return text.match(/https?:\/\/[^\s]+/gi) || [];
+};
 
 const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
     try {
         if (!message?.message || message.key.fromMe) return;
+
         const from = message.key.remoteJid;
-        const isGroup = from.endsWith('@g.us');
+        if (!from.endsWith("@g.us")) return;
 
-        if (!isGroup) return;
-
-        const antiLink = await getGroupSetting(from, 'ANTILINK');
-
-        if (!antiLink || antiLink === 'false' || antiLink === 'off') return;
+        const antiLink = await getGroupSetting(from, "ANTILINK");
+        if (!antiLink || antiLink === "false" || antiLink === "off") return;
 
         const messageType = Object.keys(message.message)[0];
-        const body = messageType === 'conversation'
-            ? message.message.conversation
-            : message.message[messageType]?.text || message.message[messageType]?.caption || '';
+        const body =
+            messageType === "conversation"
+                ? message.message.conversation
+                : message.message[messageType]?.text ||
+                  message.message[messageType]?.caption ||
+                  "";
 
-        if (!body || !isAnyLink(body)) return;
+        // =========================
+        // FIXED LINK DETECTION
+        // =========================
+        const links = extractLinks(body);
+        if (!links.length) return;
 
-        let sender = message.key.participantPn || message.key.participant || message.participant;
-        if (!sender || sender.endsWith('@g.us')) return;
+        // =========================
+        // LOAD ALLOWED / DISALLOWED
+        // =========================
+        let allowed = await getGroupSetting(from, "ANTILINK_ALLOWED");
+        let disallowed = await getGroupSetting(from, "ANTILINK_DISALLOWED");
 
-        const settings = await getAllSettings();
+        allowed = allowed ? JSON.parse(allowed) : [];
+        disallowed = disallowed ? JSON.parse(disallowed) : [];
 
-        if (sender.endsWith('@lid')) {
+        // =========================
+        // SMART FILTER LOGIC
+        // =========================
+        const hasBlockedLink = links.some(link => {
+            const l = link.toLowerCase();
+
+            // ✔ allowed = ignore
+            if (allowed.some(d => l.includes(d))) return false;
+
+            // 🚫 disallowed = block
+            if (disallowed.some(d => l.includes(d))) return true;
+
+            return false;
+        });
+
+        if (!hasBlockedLink) return;
+
+        // =========================
+        // SENDER
+        // =========================
+        let sender =
+            message.key.participantPn ||
+            message.key.participant ||
+            message.participant;
+
+        if (!sender || sender.endsWith("@g.us")) return;
+
+        if (sender.endsWith("@lid")) {
             const cached = getLidMapping(sender);
-            if (cached) {
-                sender = cached;
-            } else {
+            if (cached) sender = cached;
+            else {
                 try {
                     const resolved = await Gifted.getJidFromLid(sender);
                     if (resolved) sender = resolved;
                 } catch (e) {}
             }
         }
-        const senderNum = sender.split('@')[0];
 
-        const sudoNumbers = await getSudoNumbers() || [];
-        const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
+        const senderNum = sender.split("@")[0];
 
-        const action = antiLink.toLowerCase();
+        // =========================
+        // SUPER USER CHECK
+        // =========================
+        const sudoNumbers = (await getSudoNumbers()) || [];
+        const isSuperUser =
+            DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
 
         if (isSuperUser) return;
 
+        // =========================
+        // GROUP META
+        // =========================
         const groupMetadata = await getGroupMetadata(Gifted, from);
-        if (!groupMetadata || !groupMetadata.participants) return;
+        if (!groupMetadata?.participants) return;
 
-        const botJid = Gifted.user?.id?.split(':')[0] + '@s.whatsapp.net';
+        const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
+
         const botAdmin = groupMetadata.participants.find(p => {
-            const pNum = (p.pn || p.phoneNumber || p.id || '').split('@')[0];
-            const botNum = botJid.split('@')[0];
+            const pNum = (p.pn || p.phoneNumber || p.id || "").split("@")[0];
+            const botNum = botJid.split("@")[0];
             return pNum === botNum && p.admin;
         });
+
         if (!botAdmin) return;
 
         const groupAdmins = groupMetadata.participants
-            .filter((member) => member.admin)
-            .map((admin) => admin.pn || admin.phoneNumber || admin.id);
+            .filter(m => m.admin)
+            .map(a => a.pn || a.phoneNumber || a.id);
 
-        const senderNormalized = sender.split('@')[0];
         const isAdmin = groupAdmins.some(admin => {
-            const adminNum = (admin || '').split('@')[0];
-            return adminNum === senderNormalized || admin === sender;
+            const adminNum = (admin || "").split("@")[0];
+            return adminNum === senderNum;
         });
 
         if (isAdmin) return;
 
-        // delete the message first for all active modes
+        // =========================
+        // DELETE MESSAGE
+        // =========================
         try {
             await Gifted.sendMessage(from, { delete: message.key });
         } catch (delErr) {
             console.error('Failed to delete message:', delErr.message);
         }
+        
+        const action = antiLink.toLowerCase();
 
+        // =========================
+        // ACTION SYSTEM
+        // =========================
         if (action === 'null') {
             // silent delete — no message, no warning
             return;
