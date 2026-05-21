@@ -18,16 +18,6 @@ const isSuperUser = async (jid, Gifted) => {
     return sudoNumbers.includes(num);
 };
 
-const DEFAULT_PLACEHOLDER = "https://files.catbox.moe/9aciic.png";
-
-const getProfilePic = async (Gifted, jid) => {
-    try {
-        return await Gifted.profilePictureUrl(jid, "image");
-    } catch {
-        return DEFAULT_PLACEHOLDER;
-    }
-};
-
 const formatJid = (jid) => {
     if (!jid) return "Unknown";
     return jid.split("@")[0];
@@ -114,107 +104,133 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
 };
 
 // ─── FIXED: multiline + image support ────────────────────────────────────────
+const DEFAULT_PLACEHOLDER = "https://files.catbox.moe/9aciic.png";
+
 const extractMedia = (raw, ctx = {}) => {
-if (!raw) return { text: "", image: null };
+    if (!raw) return { text: "", image: null };
 
-let text = raw.replace(/\r/g, "\n");
+    // DB se \\n aata hai escaped — real newline mein convert karo
+    let text = raw
+        .replace(/\\n/g, "\n")   // escaped newline from DB
+        .replace(/\r\n/g, "\n")  // Windows line endings
+        .replace(/\r/g, "\n");   // old Mac line endings
 
-const pp = ctx.pp || "";
-const gpp = ctx.gpp || "";
+    const pp  = ctx.pp  || "";
+    const gpp = ctx.gpp || "";
 
-let image = null;
+    let image = null;
+    const lines = text.split("\n");
+    const clean = [];
 
-const lines = text.split("\n");
-const clean = [];
+    // PASS 1: &pp / &gpp akele line pe hain → image
+    for (const line of lines) {
+        const t = line.trim();
+        if (t === "&gpp") {
+            if (!image && gpp && gpp !== DEFAULT_PLACEHOLDER) image = gpp;
+            continue;
+        }
+        if (t === "&pp") {
+            if (!image && pp && pp !== DEFAULT_PLACEHOLDER) image = pp;
+            continue;
+        }
+        clean.push(line);
+    }
 
-// FIXED REGEX
-const imgUrlRegex = /^https?:\/\/\S+\.(jpg|jpeg|png|webp)(\?.*)?$/i;
-const waUrlRegex = /^https?:\/\/pps\.whatsapp\.net\S+/i;
+    // PASS 2: placeholders replace
+    let joined = clean.join("\n")
+        .replace(/&mention/g, ctx.mention || "")
+        .replace(/&gname/g,   ctx.gname   || "")
+        .replace(/&desc/g,    ctx.desc    || "")
+        .replace(/&size/g,    String(ctx.size || ""))
+        .replace(/&pp/g,      "")
+        .replace(/&gpp/g,     "");
 
-// PASS 1: detect media triggers FIRST
-for (const line of lines) {
-const t = line.trim();
+    // PASS 3: last line hardcoded URL → image
+    if (!image) {
+        const finalLines = joined.split("\n");
+        let last = finalLines.length - 1;
+        while (last >= 0 && finalLines[last].trim() === "") last--;
 
-if (t === "&pp") {
-if (!image && pp) image = pp;
-continue;
-}
+        const lastLine = finalLines[last]?.trim();
+        const urlRegex = /^https?:\/\/\S+$/i;
 
-if (t === "&gpp") {
-if (!image && gpp) image = gpp;
-continue;
-}
+        if (lastLine && urlRegex.test(lastLine)) {
+            image = lastLine;
+            finalLines.splice(last, 1);
+            joined = finalLines.join("\n");
+        }
+    }
 
-clean.push(line);
-}
+    // PASS 4: cleanup — stray URLs aur extra blank lines hata do
+    joined = joined
+        .replace(/https?:\/\/pps\.whatsapp\.net\S+/gi, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 
-let joined = clean.join("\n");
-
-// PASS 2: replace placeholders
-joined = joined
-.replace(/&mention/g, ctx.mention || "")
-.replace(/&gname/g, ctx.gname || "")
-.replace(/&desc/g, ctx.desc || "")
-.replace(/&size/g, String(ctx.size || ""))
-.replace(/&pp/g, "")
-.replace(/&gpp/g, "");
-
-const finalLines = joined.split("\n");
-
-// PASS 3: detect LAST LINE image URL
-let last = finalLines.length - 1;
-while (last >= 0 && finalLines[last].trim() === "") last--;
-
-const lastLine = finalLines[last]?.trim();
-
-if (
-!image &&
-lastLine &&
-(imgUrlRegex.test(lastLine) || waUrlRegex.test(lastLine))
-) {
-image = lastLine;
-finalLines.splice(last, 1);
-}
-
-joined = finalLines.join("\n");
-
-// PASS 4: HARD CLEAN
-joined = joined
-.replace(waUrlRegex, "")
-.replace(imgUrlRegex, "")
-.replace(/\n{3,}/g, "\n\n")
-.trim();
-
-return { text: joined, image };
+    return { text: joined, image };
 };
 
-// Send with image if available, fallback to text
+// Buffer fetch — WhatsApp CDN ke liye zaroori, { url: image } kaam nahi karta
+const fetchImageBuffer = async (url) => {
+    if (!url || url === DEFAULT_PLACEHOLDER) return null;
+    try {
+        const https = require("https");
+        const http  = require("http");
+        const mod   = url.startsWith("https") ? https : http;
+        return await new Promise((resolve) => {
+            const req = mod.get(url, {
+                headers: { "User-Agent": "WhatsApp/2.23.20.0" }
+            }, (res) => {
+                if (res.statusCode !== 200) {
+                    console.error("[fetchImageBuffer] bad status:", res.statusCode);
+                    resolve(null);
+                    return;
+                }
+                const chunks = [];
+                res.on("data", (c) => chunks.push(c));
+                res.on("end",  () => resolve(Buffer.concat(chunks)));
+                res.on("error", (e) => {
+                    console.error("[fetchImageBuffer] stream error:", e.message);
+                    resolve(null);
+                });
+            });
+            req.setTimeout(5000, () => {
+                console.error("[fetchImageBuffer] timeout");
+                req.destroy();
+                resolve(null);
+            });
+            req.on("error", (e) => {
+                console.error("[fetchImageBuffer] req error:", e.message);
+                resolve(null);
+            });
+        });
+    } catch (e) {
+        console.error("[fetchImageBuffer] exception:", e.message);
+        return null;
+    }
+};
+
+// { url: image } mat use karo — buffer chahiye WhatsApp CDN ke liye
 const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
-try {
-
-// SEND IMAGE
-if (image && typeof image === "string") {
-
-await Gifted.sendMessage(groupJid, {    
-        image: { url: image },    
-        caption: text,    
-        mentions,    
-    });    
-
-    return;    
-}    
-
-// FALLBACK TEXT    
-await Gifted.sendMessage(groupJid, {    
-    text,    
-    mentions,    
-});
-
-} catch (err) {
-console.error("sendGroupEvent error:", err.message);
-}
-
+    try {
+        if (image) {
+            const buffer = await fetchImageBuffer(image);
+            if (buffer && buffer.length > 0) {
+                await Gifted.sendMessage(groupJid, {
+                    image: buffer,   // buffer — url nahi
+                    caption: text,
+                    mentions,
+                });
+                return;
+            }
+            console.error("[sendGroupEvent] buffer failed — falling back to text");
+        }
+        await Gifted.sendMessage(groupJid, { text, mentions });
+    } catch (err) {
+        console.error("[sendGroupEvent] error:", err.message);
+    }
 };
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const processedEvents = new Map();
