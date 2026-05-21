@@ -117,7 +117,7 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
 const extractMedia = (raw, ctx = {}) => {
 if (!raw) return { text: "", image: null };
 
-let text = raw.replace(/\n/g, "\n");
+let text = raw.replace(/\r/g, "\n");
 
 const pp = ctx.pp || "";
 const gpp = ctx.gpp || "";
@@ -127,8 +127,9 @@ let image = null;
 const lines = text.split("\n");
 const clean = [];
 
-const imgUrlRegex = /^https?://\S+.(jpg|jpeg|png|webp)(?.*)?$/i;
-const waUrlRegex = /^https?://pps.whatsapp.net\S+/i;
+// FIXED REGEX
+const imgUrlRegex = /^https?:\/\/\S+\.(jpg|jpeg|png|webp)(\?.*)?$/i;
+const waUrlRegex = /^https?:\/\/pps\.whatsapp\.net\S+/i;
 
 // PASS 1: detect media triggers FIRST
 for (const line of lines) {
@@ -145,7 +146,6 @@ continue;
 }
 
 clean.push(line);
-
 }
 
 let joined = clean.join("\n");
@@ -161,20 +161,24 @@ joined = joined
 
 const finalLines = joined.split("\n");
 
-// PASS 3: detect LAST LINE image URL (important fix)
+// PASS 3: detect LAST LINE image URL
 let last = finalLines.length - 1;
 while (last >= 0 && finalLines[last].trim() === "") last--;
 
 const lastLine = finalLines[last]?.trim();
 
-if (!image && (imgUrlRegex.test(lastLine) || waUrlRegex.test(lastLine))) {
+if (
+!image &&
+lastLine &&
+(imgUrlRegex.test(lastLine) || waUrlRegex.test(lastLine))
+) {
 image = lastLine;
 finalLines.splice(last, 1);
 }
 
 joined = finalLines.join("\n");
 
-// PASS 4: HARD CLEAN (removes leaks like your issue)
+// PASS 4: HARD CLEAN
 joined = joined
 .replace(waUrlRegex, "")
 .replace(imgUrlRegex, "")
