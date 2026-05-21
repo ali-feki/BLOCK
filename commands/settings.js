@@ -1015,57 +1015,147 @@ gmd(
 
 gmd(
   {
-    pattern: "setantilink",
-    aliases: ["antilink"],
+    pattern: "antilink",
+    aliases: ["setantilink"],
     react: "⚙️",
     category: "group",
-    description: "Set antilink for this group (on/warn/delete/kick/off)",
+    description: "Antilink system with modes + allowed/disallowed + reset",
   },
   async (from, Gifted, conText) => {
     const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
+
     if (!isGroup) return reply("❌ This command only works in groups!");
     if (!isSuperUser && !isAdmin) return reply("❌ Admin/Owner Only Command!");
 
     const input = (q || "").toLowerCase().trim();
-    const modeMap = {
-      on: "delete",
-      off: "false",
-      true: "delete",
-      false: "false",
-      delete: "delete",
-      kick: "kick",
-      warn: "warn",
-    };
 
-    const value = modeMap[input];
-    if (!value) {
-      const warnCount = await getGroupSetting(from, "ANTILINK_WARN_COUNT");
-      return reply(`❌ Please specify a mode:
-• *on/delete* - Delete links (no kick)
-• *warn* - Warn user, kick after ${warnCount} warnings
-• *kick* - Delete link & immediately kick user
-• *off* - Disable antilink`);
+    if (!input) {
+      return reply(
+`❌ Usage:
+
+⚙️ MODES:
+.antilink on
+.antilink delete
+.antilink warn
+.antilink kick
+.antilink null
+.antilink off
+
+🌐 ALLOWED:
+.antilink allowed youtube.com,whatsapp.com
+
+🚫 DISALLOWED:
+.antilink disallowed t.me,bit.ly
+
+♻️ RESET:
+.antilink reset`
+      );
     }
+
+    const [cmd, ...rest] = input.split(" ");
+    const value = rest.join(" ").trim();
 
     try {
-      const current = await getGroupSetting(from, "ANTILINK");
-      if (current === value) {
-        const displayVal = value === "false" ? "OFF" : value.toUpperCase();
-        return reply(`⚠️ Antilink is already: *${displayVal}*`);
+
+      // =========================
+      // ⚙️ MODE SYSTEM
+      // =========================
+      const modeMap = {
+        on: "delete",
+        delete: "delete",
+        true: "delete",
+        kick: "kick",
+        warn: "warn",
+        null: "null",
+        off: "false",
+        false: "false"
+      };
+
+      if (modeMap[cmd]) {
+        const mode = modeMap[cmd];
+
+        await setGroupSetting(from, "ANTILINK", mode);
+        await react("✅");
+
+        let msg = `✅ Antilink Mode: *${cmd.toUpperCase()}*`;
+
+        if (mode === "warn") {
+          const warnCount = (await getGroupSetting(from, "ANTILINK_WARN_COUNT")) || 5;
+          msg += `\n⚠️ Kick after ${warnCount} warnings`;
+        }
+
+        if (mode === "null") {
+          msg += `\n🔇 Silent delete enabled`;
+        }
+
+        return reply(msg);
       }
-      await setGroupSetting(from, "ANTILINK", value);
-      await react("✅");
-      const displayVal = value === "false" ? "OFF" : value.toUpperCase();
-      let msg = `✅ Antilink: *${displayVal}*`;
-      if (value === "warn") {
-        const warnCount = await getGroupSetting(from, "ANTILINK_WARN_COUNT");
-        msg += `\nKick after *${warnCount}* warnings`;
+
+      // =========================
+      // 🌐 ALLOWED URLS (FIXED SAFETY)
+      // =========================
+      if (cmd === "allowed") {
+        if (!value) return reply("❌ Provide URLs!");
+
+        const list = value
+          .split(",")
+          .map(v => v.trim().toLowerCase())
+          .filter(v => v.length > 0);
+
+        await setGroupSetting(from, "ANTILINK_ALLOWED", JSON.stringify(list));
+        await react("✔️");
+
+        return reply(
+`🌐 Allowed URLs Updated:
+
+${list.length ? list.map(v => "✔ " + v).join("\n") : "None"}`
+        );
       }
-      await reply(msg);
+
+      // =========================
+      // 🚫 DISALLOWED URLS (FIXED SAFETY)
+      // =========================
+      if (cmd === "disallowed") {
+        if (!value) return reply("❌ Provide URLs!");
+
+        const list = value
+          .split(",")
+          .map(v => v.trim().toLowerCase())
+          .filter(v => v.length > 0);
+
+        await setGroupSetting(from, "ANTILINK_DISALLOWED", JSON.stringify(list));
+        await react("🚫");
+
+        return reply(
+`🚫 Disallowed URLs Updated:
+
+${list.length ? list.map(v => "❌ " + v).join("\n") : "None"}`
+        );
+      }
+
+      // =========================
+      // ♻️ RESET / CLEAR (FIXED)
+      // =========================
+      if (cmd === "reset" || cmd === "clear") {
+        await setGroupSetting(from, "ANTILINK_ALLOWED", JSON.stringify([]));
+        await setGroupSetting(from, "ANTILINK_DISALLOWED", JSON.stringify([]));
+
+        await react("♻️");
+
+        return reply(
+`♻️ Antilink Reset Done!
+
+✔ Allowed URLs cleared
+✔ Disallowed URLs cleared`
+        );
+      }
+
+      return reply("❌ Invalid option! Type .antilink for help");
+
     } catch (error) {
-      await reply(`❌ Error: ${error.message}`);
+      return reply(`❌ Error: ${error.message}`);
     }
-  },
+  }
 );
 
 gmd(
