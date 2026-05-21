@@ -22,8 +22,11 @@ const DEFAULT_PLACEHOLDER = "https://files.catbox.moe/9aciic.png";
 
 const getProfilePic = async (Gifted, jid) => {
     try {
-        return await Gifted.profilePictureUrl(jid, "image");
-    } catch {
+        const url = await Gifted.profilePictureUrl(jid, "image");
+        console.log(`[getProfilePic] jid=${jid} → url=${url}`);
+        return url;
+    } catch (e) {
+        console.log(`[getProfilePic] FAILED for jid=${jid} — using placeholder. reason: ${e.message}`);
         return DEFAULT_PLACEHOLDER;
     }
 };
@@ -94,37 +97,74 @@ const getFreshGroupMetadata = async (Gifted, groupJid) => {
 
 // ─── extractMedia ─────────────────────────────────────────────────────────────
 const extractMedia = (raw, ctx = {}) => {
-    if (!raw) return { text: "", image: null };
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("[extractMedia] START");
+    console.log("[extractMedia] raw (JSON):", JSON.stringify(raw));
+    console.log("[extractMedia] ctx.pp:", ctx.pp);
+    console.log("[extractMedia] ctx.gpp:", ctx.gpp);
+    console.log("[extractMedia] ctx.mention:", ctx.mention);
+    console.log("[extractMedia] ctx.gname:", ctx.gname);
 
-    // DB se aane wale escaped newlines — sab fix karo
+    if (!raw) {
+        console.log("[extractMedia] raw is empty — returning blank");
+        return { text: "", image: null };
+    }
+
+    // Fix all newline variants
     let text = raw
-        .replace(/\\n/g, "\n")    // DB escaped: \\n → \n
-        .replace(/\r\n/g, "\n")   // Windows
-        .replace(/\r/g, "\n");    // old Mac
+        .replace(/\\n/g, "\n")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n");
+
+    console.log("[extractMedia] after newline fix (JSON):", JSON.stringify(text));
 
     const pp  = ctx.pp  || "";
     const gpp = ctx.gpp || "";
     let image = null;
 
     const lines = text.split("\n");
+    console.log("[extractMedia] total lines:", lines.length);
+    lines.forEach((l, i) => console.log(`[extractMedia] line[${i}]: ${JSON.stringify(l)}`));
+
     const clean = [];
 
-    // PASS 1: &pp / &gpp akele line pe → image banao, line hata do
+    // PASS 1: &pp / &gpp alone on a line → image
+    console.log("[extractMedia] ── PASS 1: scanning for &pp / &gpp ──");
     for (const line of lines) {
         const t = line.trim();
-        if (t === "&gpp") {
-    image = gpp || null;
-    continue;
-}
 
-if (t === "&pp") {
-    image = pp || null;
-    continue;
-}
+        if (t === "&gpp") {
+            console.log("[extractMedia] FOUND &gpp on own line");
+            console.log("[extractMedia] gpp value:", gpp || "(empty — will skip)");
+            if (!image && gpp && gpp !== DEFAULT_PLACEHOLDER) {
+                image = gpp;
+                console.log("[extractMedia] ✅ image set from &gpp:", image);
+            } else if (!gpp || gpp === DEFAULT_PLACEHOLDER) {
+                console.log("[extractMedia] ⚠️ &gpp is placeholder/empty — no image set");
+            }
+            continue;
+        }
+
+        if (t === "&pp") {
+            console.log("[extractMedia] FOUND &pp on own line");
+            console.log("[extractMedia] pp value:", pp || "(empty — will skip)");
+            if (!image && pp && pp !== DEFAULT_PLACEHOLDER) {
+                image = pp;
+                console.log("[extractMedia] ✅ image set from &pp:", image);
+            } else if (!image) {
+                console.log("[extractMedia] ⚠️ &pp is placeholder/empty — no image set");
+            }
+            continue;
+        }
+
         clean.push(line);
     }
 
-    // PASS 2: placeholders replace
+    console.log("[extractMedia] after PASS 1 — image:", image || "null");
+    console.log("[extractMedia] clean lines count:", clean.length);
+
+    // PASS 2: replace placeholders
+    console.log("[extractMedia] ── PASS 2: replacing placeholders ──");
     let joined = clean.join("\n")
         .replace(/&mention/g, ctx.mention || "")
         .replace(/&gname/g,   ctx.gname   || "")
@@ -133,99 +173,143 @@ if (t === "&pp") {
         .replace(/&pp/g,      "")
         .replace(/&gpp/g,     "");
 
-    // PASS 3: agar abhi tak image nahi mili — last line URL check karo
+    console.log("[extractMedia] after PASS 2 (JSON):", JSON.stringify(joined));
+
+    // PASS 3: if no image yet — check last line for hardcoded URL
+    console.log("[extractMedia] ── PASS 3: last line URL check ──");
     if (!image) {
         const fl = joined.split("\n");
         let last = fl.length - 1;
         while (last >= 0 && fl[last].trim() === "") last--;
         const lastLine = fl[last]?.trim();
+        console.log("[extractMedia] last non-empty line:", JSON.stringify(lastLine));
+
         if (lastLine && /^https?:\/\/\S+$/i.test(lastLine)) {
             image = lastLine;
             fl.splice(last, 1);
             joined = fl.join("\n");
+            console.log("[extractMedia] ✅ image set from last line URL:", image);
+        } else {
+            console.log("[extractMedia] no URL found on last line");
         }
+    } else {
+        console.log("[extractMedia] skipping PASS 3 — image already set");
     }
 
-    // PASS 4: WhatsApp CDN URLs jo text mein reh gayi hain — clean karo
+    // PASS 4: clean stray CDN URLs from text
     joined = joined
-        .replace(/https?:\/\/pps\.whatsapp\.net[^\s]*/gi, "")
+        .replace(/https?:\/\/pps\.whatsapp\.net\S*/gi, "")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
+
+    console.log("[extractMedia] FINAL text (JSON):", JSON.stringify(joined));
+    console.log("[extractMedia] FINAL image:", image || "null");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     return { text: joined, image };
 };
 
 // ─── fetchImageBuffer ─────────────────────────────────────────────────────────
 const fetchImageBuffer = async (url) => {
-    if (!url || url === DEFAULT_PLACEHOLDER) return null;
+    console.log("[fetchImageBuffer] START — url:", url);
+
+    if (!url) {
+        console.log("[fetchImageBuffer] url is null/empty — skip");
+        return null;
+    }
+    if (url === DEFAULT_PLACEHOLDER) {
+        console.log("[fetchImageBuffer] url is placeholder — skip");
+        return null;
+    }
+
     try {
         const https = require("https");
         const http  = require("http");
         const mod   = url.startsWith("https") ? https : http;
+        console.log("[fetchImageBuffer] using:", url.startsWith("https") ? "https" : "http");
+
         return await new Promise((resolve) => {
             const req = mod.get(url, {
                 headers: { "User-Agent": "WhatsApp/2.23.20.0" }
             }, (res) => {
-                if (res.statusCode !== 200) { resolve(null); return; }
+                console.log("[fetchImageBuffer] HTTP status:", res.statusCode);
+                console.log("[fetchImageBuffer] content-type:", res.headers["content-type"]);
+                console.log("[fetchImageBuffer] content-length:", res.headers["content-length"]);
+
+                if (res.statusCode !== 200) {
+                    console.log("[fetchImageBuffer] ❌ bad status — aborting");
+                    res.resume();
+                    resolve(null);
+                    return;
+                }
+
                 const chunks = [];
                 res.on("data", (c) => chunks.push(c));
-                res.on("end",  () => resolve(Buffer.concat(chunks)));
-                res.on("error",() => resolve(null));
+                res.on("end", () => {
+                    const buf = Buffer.concat(chunks);
+                    console.log("[fetchImageBuffer] ✅ buffer ready — size:", buf.length, "bytes");
+                    resolve(buf);
+                });
+                res.on("error", (e) => {
+                    console.log("[fetchImageBuffer] ❌ stream error:", e.message);
+                    resolve(null);
+                });
             });
-            // Timeout — CDN hang pe bot hang na kare
-            req.setTimeout(5000, () => { req.destroy(); resolve(null); });
-            req.on("error", () => resolve(null));
+
+            req.setTimeout(5000, () => {
+                console.log("[fetchImageBuffer] ❌ timeout after 5s — aborting");
+                req.destroy();
+                resolve(null);
+            });
+
+            req.on("error", (e) => {
+                console.log("[fetchImageBuffer] ❌ request error:", e.message);
+                resolve(null);
+            });
         });
-    } catch {
+    } catch (e) {
+        console.log("[fetchImageBuffer] ❌ exception:", e.message);
         return null;
     }
 };
 
 // ─── sendGroupEvent ───────────────────────────────────────────────────────────
 const sendGroupEvent = async (Gifted, groupJid, text, image, mentions) => {
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("[sendGroupEvent] START");
+    console.log("[sendGroupEvent] groupJid:", groupJid);
+    console.log("[sendGroupEvent] image:", image || "null");
+    console.log("[sendGroupEvent] text (JSON):", JSON.stringify(text));
+    console.log("[sendGroupEvent] mentions:", mentions);
+
     try {
-
-        // TRY 1 — direct URL (best for WhatsApp profile pics)
         if (image) {
-            try {
-                await Gifted.sendMessage(groupJid, {
-                    image: { url: image },
-                    caption: text,
-                    mentions,
-                });
-
-                return;
-
-            } catch (e) {
-                console.error("[sendGroupEvent] direct url failed:", e.message);
-            }
-        }
-
-        // TRY 2 — buffer fallback
-        if (image) {
+            console.log("[sendGroupEvent] image present — fetching buffer...");
             const buffer = await fetchImageBuffer(image);
-            console.log("IMAGE URL:", image);
 
             if (buffer && buffer.length > 0) {
+                console.log("[sendGroupEvent] ✅ buffer ok — sending image message");
                 await Gifted.sendMessage(groupJid, {
                     image: buffer,
                     caption: text,
                     mentions,
                 });
-
+                console.log("[sendGroupEvent] ✅ image message sent successfully");
                 return;
             }
+
+            console.log("[sendGroupEvent] ⚠️ buffer null/empty — falling back to text");
+        } else {
+            console.log("[sendGroupEvent] no image — sending text only");
         }
 
-        // LAST fallback
-        await Gifted.sendMessage(groupJid, {
-            text,
-            mentions,
-        });
-
+        await Gifted.sendMessage(groupJid, { text, mentions });
+        console.log("[sendGroupEvent] ✅ text message sent successfully");
     } catch (err) {
-        console.error("sendGroupEvent error:", err.message);
+        console.error("[sendGroupEvent] ❌ error:", err.message);
     }
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 };
 
 // ─── DEDUP ────────────────────────────────────────────────────────────────────
@@ -233,15 +317,14 @@ const processedEvents = new Map();
 const EVENT_DEDUP_INTERVAL = 5000;
 
 const getEventKey = (groupJid, action, participants) => {
-    // [...participants] — original array mutate na ho
     return `${groupJid}:${action}:${[...participants].sort().join(",")}`;
 };
 
 const isDuplicateEvent = (groupJid, action, participants) => {
     const key = getEventKey(groupJid, action, participants);
     const now = Date.now();
-    const lastProcessed = processedEvents.get(key);
-    if (lastProcessed && (now - lastProcessed) < EVENT_DEDUP_INTERVAL) return true;
+    const last = processedEvents.get(key);
+    if (last && now - last < EVENT_DEDUP_INTERVAL) return true;
     processedEvents.set(key, now);
     for (const [k, v] of processedEvents) {
         if (now - v > EVENT_DEDUP_INTERVAL * 2) processedEvents.delete(k);
@@ -279,23 +362,42 @@ const setupGroupEventsListeners = (Gifted) => {
 
             switch (action) {
 
+                // ─── WELCOME ─────────────────────────────────────────────
                 case "add": {
+                    console.log("══════════════════════════════════════════");
+                    console.log("[WELCOME] member joined — group:", groupJid);
+                    console.log("[WELCOME] participants:", participants);
+
                     const welcomeEnabled = await getGroupSetting(groupJid, "WELCOME_MESSAGE");
+                    console.log("[WELCOME] WELCOME_MESSAGE setting:", welcomeEnabled);
+
                     const isWelcomeOn = welcomeEnabled &&
                         ["true", "on", "1", "yes"].includes(String(welcomeEnabled).toLowerCase().trim());
-                    if (!isWelcomeOn) return;
+
+                    if (!isWelcomeOn) {
+                        console.log("[WELCOME] ⚠️ welcome is OFF — skipping");
+                        return;
+                    }
 
                     const rawTemplate = (await getGroupSetting(groupJid, "WELCOME_MESSAGE_TEXT"))
                         || "&mention Welcome 🎉";
+                    console.log("[WELCOME] rawTemplate from DB:", JSON.stringify(rawTemplate));
 
                     for (const participant of participants) {
                         try {
                             const userJid    = await getJidFromParticipant(Gifted, participant, groupMeta);
                             const userNumber = formatJid(userJid);
+                            console.log("[WELCOME] resolved userJid:", userJid);
+
                             const [profilePic, groupPP] = await Promise.all([
                                 getProfilePic(Gifted, userJid),
                                 getProfilePic(Gifted, groupJid),
                             ]);
+
+                            console.log("[WELCOME] profilePic:", profilePic);
+                            console.log("[WELCOME] groupPP:", groupPP);
+                            console.log("[WELCOME] pp is placeholder?", profilePic === DEFAULT_PLACEHOLDER);
+                            console.log("[WELCOME] gpp is placeholder?", groupPP === DEFAULT_PLACEHOLDER);
 
                             const ctx = {
                                 mention: `@${userNumber}`,
@@ -307,31 +409,52 @@ const setupGroupEventsListeners = (Gifted) => {
                             };
 
                             const { text, image } = extractMedia(rawTemplate, ctx);
+                            console.log("[WELCOME] → sending with image:", image || "none");
                             await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
                         } catch (err) {
-                            console.error("Welcome message error:", err.message);
+                            console.error("[WELCOME] ❌ error:", err.message);
                         }
                     }
+                    console.log("══════════════════════════════════════════");
                     break;
                 }
 
+                // ─── GOODBYE ─────────────────────────────────────────────
                 case "remove": {
+                    console.log("══════════════════════════════════════════");
+                    console.log("[GOODBYE] member left — group:", groupJid);
+                    console.log("[GOODBYE] participants:", participants);
+
                     const goodbyeEnabled = await getGroupSetting(groupJid, "GOODBYE_MESSAGE");
+                    console.log("[GOODBYE] GOODBYE_MESSAGE setting:", goodbyeEnabled);
+
                     const isGoodbyeOn = goodbyeEnabled &&
                         ["true", "on", "1", "yes"].includes(String(goodbyeEnabled).toLowerCase().trim());
-                    if (!isGoodbyeOn) return;
+
+                    if (!isGoodbyeOn) {
+                        console.log("[GOODBYE] ⚠️ goodbye is OFF — skipping");
+                        return;
+                    }
 
                     const rawTemplate = (await getGroupSetting(groupJid, "GOODBYE_MESSAGE_TEXT"))
                         || "&mention left 👋";
+                    console.log("[GOODBYE] rawTemplate from DB:", JSON.stringify(rawTemplate));
 
                     for (const participant of participants) {
                         try {
                             const userJid    = await getJidFromParticipant(Gifted, participant, groupMeta);
                             const userNumber = formatJid(userJid);
+                            console.log("[GOODBYE] resolved userJid:", userJid);
+
                             const [profilePic, groupPP] = await Promise.all([
                                 getProfilePic(Gifted, userJid),
                                 getProfilePic(Gifted, groupJid),
                             ]);
+
+                            console.log("[GOODBYE] profilePic:", profilePic);
+                            console.log("[GOODBYE] groupPP:", groupPP);
+                            console.log("[GOODBYE] pp is placeholder?", profilePic === DEFAULT_PLACEHOLDER);
+                            console.log("[GOODBYE] gpp is placeholder?", groupPP === DEFAULT_PLACEHOLDER);
 
                             const ctx = {
                                 mention: `@${userNumber}`,
@@ -343,26 +466,25 @@ const setupGroupEventsListeners = (Gifted) => {
                             };
 
                             const { text, image } = extractMedia(rawTemplate, ctx);
+                            console.log("[GOODBYE] → sending with image:", image || "none");
                             await sendGroupEvent(Gifted, groupJid, text, image, [userJid]);
                         } catch (err) {
-                            console.error("Goodbye message error:", err.message);
+                            console.error("[GOODBYE] ❌ error:", err.message);
                         }
                     }
+                    console.log("══════════════════════════════════════════");
                     break;
                 }
 
                 case "promote": {
                     const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
-                    
                     const antiPromoteEnabled = await getGroupSetting(groupJid, "ANTIPROMOTE");
                     if (String(antiPromoteEnabled) === "true" && author) {
                         const authorJid = await getJidFromParticipant(Gifted, author, groupMeta);
                         const authorNum = authorJid.split("@")[0].split(":")[0];
                         const botNum = botJid.split("@")[0];
-                        
                         const isAuthorSuperUser = await isSuperUser(authorJid, Gifted);
                         if (isAuthorSuperUser) break;
-                        
                         let isBotAdmin = false;
                         for (const p of groupMeta?.participants || []) {
                             if (p.admin !== "admin" && p.admin !== "superadmin") continue;
@@ -370,7 +492,6 @@ const setupGroupEventsListeners = (Gifted) => {
                             const pNum = pJid.split("@")[0].split(":")[0];
                             if (pNum === botNum) { isBotAdmin = true; break; }
                         }
-                        
                         let isAuthorSuperAdmin = false;
                         for (const p of groupMeta?.participants || []) {
                             if (p.admin !== "superadmin") continue;
@@ -378,26 +499,22 @@ const setupGroupEventsListeners = (Gifted) => {
                             const pNum = pJid.split("@")[0].split(":")[0];
                             if (pNum === authorNum) { isAuthorSuperAdmin = true; break; }
                         }
-                        
                         if (authorNum !== botNum && isBotAdmin) {
                             for (const participant of participants) {
                                 try {
                                     const participantJid = await getJidFromParticipant(Gifted, participant, groupMeta);
                                     const participantNum = participantJid.split("@")[0].split(":")[0];
                                     const isParticipantSuperUser = await isSuperUser(participantJid, Gifted);
-                                    
                                     let isParticipantSuperAdmin = false;
                                     for (const p of groupMeta?.participants || []) {
                                         if (p.admin !== "superadmin") continue;
                                         const pJid = await getJidFromParticipant(Gifted, p.id, groupMeta);
                                         if (pJid.split("@")[0].split(":")[0] === participantNum) { isParticipantSuperAdmin = true; break; }
                                     }
-                                    
                                     const promotedNumber    = formatJid(participantJid);
                                     const authorNumber      = formatJid(authorJid);
                                     const skipParticipant   = isParticipantSuperUser || isParticipantSuperAdmin;
                                     const isAuthorProtected = isAuthorSuperAdmin || await isSuperUser(authorJid, Gifted);
-                                    
                                     if (isAuthorProtected && skipParticipant) {
                                         continue;
                                     } else if (isAuthorProtected) {
@@ -421,10 +538,8 @@ const setupGroupEventsListeners = (Gifted) => {
                             break;
                         }
                     }
-                    
                     const groupEventsEnabled = await getGroupSetting(groupJid, "GROUP_EVENTS");
                     if (groupEventsEnabled !== "true") break;
-
                     for (const participant of participants) {
                         try {
                             const participantJid = await getJidFromParticipant(Gifted, participant, groupMeta);
@@ -444,53 +559,44 @@ const setupGroupEventsListeners = (Gifted) => {
 
                 case "demote": {
                     const botJid2 = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
-                    
                     const antiDemoteEnabled = await getGroupSetting(groupJid, "ANTIDEMOTE");
                     if (String(antiDemoteEnabled) === "true" && author) {
                         let freshGroupMeta;
                         try { freshGroupMeta = await Gifted.groupMetadata(groupJid); }
                         catch (e) { freshGroupMeta = groupMeta; }
-                        
                         const authorJid = await getJidFromParticipant(Gifted, author, freshGroupMeta);
                         const authorNum = authorJid.split("@")[0].split(":")[0];
                         const botNum = botJid2.split("@")[0];
-                        
                         const isAuthorSuperUser = await isSuperUser(authorJid, Gifted);
                         if (isAuthorSuperUser) break;
-                        
                         let isBotAdmin = false;
                         for (const p of freshGroupMeta?.participants || []) {
                             if (p.admin !== "admin" && p.admin !== "superadmin") continue;
                             const pJid = await getJidFromParticipant(Gifted, p.id, freshGroupMeta);
                             if (pJid.split("@")[0].split(":")[0] === botNum) { isBotAdmin = true; break; }
                         }
-                        
                         let isAuthorSuperAdmin = false;
                         for (const p of freshGroupMeta?.participants || []) {
                             if (p.admin !== "superadmin") continue;
                             const pJid = await getJidFromParticipant(Gifted, p.id, freshGroupMeta);
                             if (pJid.split("@")[0].split(":")[0] === authorNum) { isAuthorSuperAdmin = true; break; }
                         }
-                        
                         if (authorNum !== botNum && isBotAdmin) {
                             for (const participant of participants) {
                                 try {
                                     const participantJid = await getJidFromParticipant(Gifted, participant, freshGroupMeta);
                                     const participantNum = participantJid.split("@")[0].split(":")[0];
                                     const isParticipantSuperUser = await isSuperUser(participantJid, Gifted);
-                                    
                                     let isParticipantSuperAdmin = false;
                                     for (const p of freshGroupMeta?.participants || []) {
                                         if (p.admin !== "superadmin") continue;
                                         const pJid = await getJidFromParticipant(Gifted, p.id, freshGroupMeta);
                                         if (pJid.split("@")[0].split(":")[0] === participantNum) { isParticipantSuperAdmin = true; break; }
                                     }
-                                    
                                     const demotedNumber     = formatJid(participantJid);
                                     const authorNumber      = formatJid(authorJid);
                                     const isProtected       = isParticipantSuperUser || isParticipantSuperAdmin;
                                     const isAuthorProtected = isAuthorSuperAdmin || await isSuperUser(authorJid, Gifted);
-                                    
                                     if (isAuthorProtected) {
                                         await Gifted.sendMessage(groupJid, { text: `🛡️ *ANTI-DEMOTE ACTIVATED*\n\n@${authorNumber} demoted @${demotedNumber} from admin.\n\n⚠️ *Action:* Re-promoting @${demotedNumber}...`, mentions: [authorJid, participantJid] });
                                         await new Promise(r => setTimeout(r, 500));
@@ -513,10 +619,8 @@ const setupGroupEventsListeners = (Gifted) => {
                             break;
                         }
                     }
-                    
                     const groupEventsEnabled = await getGroupSetting(groupJid, "GROUP_EVENTS");
                     if (groupEventsEnabled !== "true") break;
-
                     for (const participant of participants) {
                         try {
                             const participantJid = await getJidFromParticipant(Gifted, participant, groupMeta);
@@ -535,7 +639,7 @@ const setupGroupEventsListeners = (Gifted) => {
                 }
             }
         } catch (error) {
-            console.error("Group events handler error:", error.message);
+            console.error("[GROUP_EVENTS] ❌ handler error:", error.message);
         }
     });
 };
