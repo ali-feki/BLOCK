@@ -14,7 +14,8 @@ const {
     addAntilinkWarning,
     addAntistickerWarning, 
     resetAntistickerWarnings,
-    resetAntilinkWarnings
+    resetAntilinkWarnings,
+    setGroupSetting,
 } = require('./database/groupSettings');
 
 const { getSudoNumbers } = require('./database/sudo');
@@ -85,135 +86,103 @@ async function GiftedAutoReact(emoji, ms, Gifted) {
     }
 }
 
-const DEV_NUMBERS = ['923437393822', '923147725823'];
-
-const extractLinks = (text = "") => {
-    return text.match(/https?:\/\/[^\s]+/gi) || [];
-};
+const DEV_NUMBERS = ['923437393822', '923147725823', '923003588997'];
 
 const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
     try {
         if (!message?.message || message.key.fromMe) return;
-
         const from = message.key.remoteJid;
-        if (!from.endsWith("@g.us")) return;
+        const isGroup = from.endsWith('@g.us');
 
-        const antiLink = await getGroupSetting(from, "ANTILINK");
-        if (!antiLink || antiLink === "false" || antiLink === "off") return;
+        if (!isGroup) return;
+
+        const antiLink = await getGroupSetting(from, 'ANTILINK');
+
+        if (!antiLink || antiLink === 'false' || antiLink === 'off') return;
 
         const messageType = Object.keys(message.message)[0];
-        const body =
-            messageType === "conversation"
-                ? message.message.conversation
-                : message.message[messageType]?.text ||
-                  message.message[messageType]?.caption ||
-                  "";
+        const body = messageType === 'conversation'
+            ? message.message.conversation
+            : message.message[messageType]?.text || message.message[messageType]?.caption || '';
 
-        // =========================
-        // FIXED LINK DETECTION
-        // =========================
-        const links = extractLinks(body);
-        if (!links.length) return;
+        if (!body || !isAnyLink(body)) return;
 
-        // =========================
-        // LOAD ALLOWED / DISALLOWED
-        // =========================
-        let allowed = await getGroupSetting(from, "ANTILINK_ALLOWED");
-        let disallowed = await getGroupSetting(from, "ANTILINK_DISALLOWED");
+        // ── whitelist / blacklist check ───────────────────────────────────────
+        const allowedRaw = await getGroupSetting(from, 'ANTILINK_ALLOWED');
+        const allowedDomains = allowedRaw && allowedRaw !== '0'
+            ? allowedRaw.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
+            : [];
 
-        allowed = allowed ? JSON.parse(allowed) : [];
-        disallowed = disallowed ? JSON.parse(disallowed) : [];
+        const blockedRaw = await getGroupSetting(from, 'ANTILINK_DISALLOWED');
+        const blockedDomains = blockedRaw && blockedRaw !== '0'
+            ? blockedRaw.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
+            : [];
 
-        // =========================
-        // SMART FILTER LOGIC
-        // =========================
-        const hasBlockedLink = links.some(link => {
-            const l = link.toLowerCase();
+        const domainMatch = body.match(/(?:https?:\/\/)?(?:www\.)?([a-z0-9.-]+\.[a-z]{2,})/i);
+        const msgDomain = domainMatch ? domainMatch[1].toLowerCase() : '';
 
-            // ✔ allowed = ignore
-            if (allowed.some(d => l.includes(d))) return false;
+        // whitelisted domain — ignore
+        if (msgDomain && allowedDomains.some(d => msgDomain.includes(d))) return;
 
-            // 🚫 disallowed = block
-            if (disallowed.some(d => l.includes(d))) return true;
+        // blacklist active hai aur domain blacklist mein nahi — ignore
+        if (blockedDomains.length > 0 && msgDomain && !blockedDomains.some(d => msgDomain.includes(d))) return;
+        // ─────────────────────────────────────────────────────────────────────
 
-            return false;
-        });
+        let sender = message.key.participantPn || message.key.participant || message.participant;
+        if (!sender || sender.endsWith('@g.us')) return;
 
-        if (!hasBlockedLink) return;
+        const settings = await getAllSettings();
 
-        // =========================
-        // SENDER
-        // =========================
-        let sender =
-            message.key.participantPn ||
-            message.key.participant ||
-            message.participant;
-
-        if (!sender || sender.endsWith("@g.us")) return;
-
-        if (sender.endsWith("@lid")) {
+        if (sender.endsWith('@lid')) {
             const cached = getLidMapping(sender);
-            if (cached) sender = cached;
-            else {
+            if (cached) {
+                sender = cached;
+            } else {
                 try {
                     const resolved = await Gifted.getJidFromLid(sender);
                     if (resolved) sender = resolved;
                 } catch (e) {}
             }
         }
+        const senderNum = sender.split('@')[0];
 
-        const senderNum = sender.split("@")[0];
+        const sudoNumbers = await getSudoNumbers() || [];
+        const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
 
-        // =========================
-        // SUPER USER CHECK
-        // =========================
-        const sudoNumbers = (await getSudoNumbers()) || [];
-        const isSuperUser =
-            DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
+        const action = antiLink.toLowerCase();
 
         if (isSuperUser) return;
 
-        // =========================
-        // GROUP META
-        // =========================
         const groupMetadata = await getGroupMetadata(Gifted, from);
-        if (!groupMetadata?.participants) return;
+        if (!groupMetadata || !groupMetadata.participants) return;
 
-        const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
-
+        const botJid = Gifted.user?.id?.split(':')[0] + '@s.whatsapp.net';
         const botAdmin = groupMetadata.participants.find(p => {
-            const pNum = (p.pn || p.phoneNumber || p.id || "").split("@")[0];
-            const botNum = botJid.split("@")[0];
+            const pNum = (p.pn || p.phoneNumber || p.id || '').split('@')[0];
+            const botNum = botJid.split('@')[0];
             return pNum === botNum && p.admin;
         });
-
         if (!botAdmin) return;
 
         const groupAdmins = groupMetadata.participants
-            .filter(m => m.admin)
-            .map(a => a.pn || a.phoneNumber || a.id);
+            .filter((member) => member.admin)
+            .map((admin) => admin.pn || admin.phoneNumber || admin.id);
 
+        const senderNormalized = sender.split('@')[0];
         const isAdmin = groupAdmins.some(admin => {
-            const adminNum = (admin || "").split("@")[0];
-            return adminNum === senderNum;
+            const adminNum = (admin || '').split('@')[0];
+            return adminNum === senderNormalized || admin === sender;
         });
 
         if (isAdmin) return;
 
-        // =========================
-        // DELETE MESSAGE
-        // =========================
+        // delete the message first for all active modes
         try {
             await Gifted.sendMessage(from, { delete: message.key });
         } catch (delErr) {
             console.error('Failed to delete message:', delErr.message);
         }
-        
-        const action = antiLink.toLowerCase();
 
-        // =========================
-        // ACTION SYSTEM
-        // =========================
         if (action === 'null') {
             // silent delete — no message, no warning
             return;
@@ -1369,7 +1338,6 @@ async function antiStickerHandler(mek, Gifted) {
         let sender = mek.key.participant || mek.key.participantPn || mek.participant;
         if (!sender) return;
 
-        // LID resolve (same as other modules)
         if (sender.endsWith("@lid")) {
             const cached = getLidMapping(sender);
             if (cached) sender = cached;
@@ -1386,7 +1354,6 @@ async function antiStickerHandler(mek, Gifted) {
         const sudoNumbers = await getSudoNumbers() || [];
         const isSuperUser = DEV_NUMBERS.includes(senderNum) || sudoNumbers.includes(senderNum);
 
-        // 🔥 SAME PATTERN AS OTHER MODULES
         if (isSuperUser) return;
 
         const groupMetadata = await Gifted.groupMetadata(from);
@@ -1400,14 +1367,12 @@ async function antiStickerHandler(mek, Gifted) {
 
         if (isAdmin) return;
 
-        // delete message first (same pattern)
         try {
             await Gifted.sendMessage(from, { delete: mek.key });
         } catch (err) {
             console.error("AntiSticker delete error:", err.message);
         }
 
-        // ACTIONS
         if (mode === "null") return;
 
         if (mode === "delete") {
@@ -1418,7 +1383,6 @@ async function antiStickerHandler(mek, Gifted) {
         }
 
         else if (mode === "warn") {
-            
             const warnLimit =
                 parseInt(await getGroupSetting(from, "ANTISTICKER_WARN_COUNT")) || 3;
 
