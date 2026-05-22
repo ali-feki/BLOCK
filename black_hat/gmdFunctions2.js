@@ -1,4 +1,4 @@
-const fs = require("fs-extra");
+lconst fs = require("fs-extra");
 const path = require("path");
 const { pipeline } = require("stream/promises");
 const { getSetting, getAllSettings } = require("./database/settings");
@@ -86,7 +86,7 @@ async function GiftedAutoReact(emoji, ms, Gifted) {
     }
 }
 
-const DEV_NUMBERS = ['923437393822', '923147725823', '923003588997'];
+const DEV_NUMBERS = ['923437393822', '923147725823'];
 
 const GiftedAntiLink = async (Gifted, message, getGroupMetadata) => {
     try {
