@@ -135,29 +135,125 @@ gmd(
 );
 
 gmd(
-  {
+{
     pattern: "setprefix",
     aliases: ["prefix", "botprefix", "changeprefix"],
     react: "⚙️",
     category: "owner",
     description: "Set bot prefix",
-  },
-  async (from, Gifted, conText) => {
+},
+async (from, Gifted, conText) => {
+
     const { q, reply, react, isSuperUser } = conText;
-    if (!isSuperUser) return reply("❌ Owner Only Command!");
-    if (!q) return reply("❌ Please provide a prefix!\nExample: .setprefix !");
-    try {
-      const current = await getSetting("PREFIX");
-      if (current === q.trim()) {
-        return reply(`⚠️ Prefix is already set to: *${q.trim()}*`);
-      }
-      await setSetting("PREFIX", q.trim());
-      await react("✅");
-      await reply(`✅ Prefix set to: *${q.trim()}*`);
-    } catch (error) {
-      await reply(`❌ Error: ${error.message}`);
+
+    if (!isSuperUser) {
+        return reply("❌ Owner Only Command!");
     }
-  },
+
+    try {
+
+        const input = (q || "").trim();
+
+        if (!input) {
+            return reply(
+`❌ Please provide a prefix!
+
+📌 Examples:
+.setprefix !
+.setprefix a
+.setprefix 6
+.setprefix 💀
+.setprefix . ! #
+.setprefix null`
+            );
+        }
+
+        // NULL PREFIX MODE
+        if (input.toLowerCase() === "null" || input.toLowerCase() === "noprefix") {
+            await setSetting("PREFIX", null);
+            await react("✅");
+            return reply("✅ Prefix set to: NULL (No Prefix Mode)");
+        }
+
+        // SPLIT INPUT
+        let prefixes = input
+            .split(/\s+/)
+            .map(p => p.trim())
+            .filter(Boolean);
+
+        // REMOVE DUPLICATES
+        prefixes = [...new Set(prefixes)];
+
+        // VALIDATION
+        const invalid = [];
+
+        for (const p of prefixes) {
+
+            if (!p) {
+                invalid.push("(empty)");
+                continue;
+            }
+
+            if (p.length > 5) {
+                invalid.push(`${p} (max 5 chars)`);
+                continue;
+            }
+
+            if (/\s/.test(p)) {
+                invalid.push(`${p} (no spaces allowed)`);
+                continue;
+            }
+        }
+
+        if (invalid.length > 0) {
+            return reply(
+`❌ Invalid Prefix Found:
+
+${invalid.map(v => `• ${v}`).join("\n")}
+
+✅ Allowed:
+• a
+• 6
+• !
+• 💀
+• . ! #`
+            );
+        }
+
+        // FINAL FORMAT
+        const finalPrefix =
+            prefixes.length === 1
+                ? prefixes[0]
+                : prefixes;
+
+        const current = await getSetting("PREFIX");
+
+        if (JSON.stringify(current) === JSON.stringify(finalPrefix)) {
+            return reply("⚠️ Prefix already set!");
+        }
+
+        await setSetting("PREFIX", finalPrefix);
+
+        await react("✅");
+
+        return reply(
+`✅ Prefix Updated Successfully!
+
+📌 New Prefix:
+${Array.isArray(finalPrefix)
+? finalPrefix.join(" , ")
+: finalPrefix}
+
+📊 Mode:
+${Array.isArray(finalPrefix)
+? "Multiple Prefix Mode"
+: "Single Prefix Mode"}`
+        );
+
+    } catch (error) {
+        return reply(`❌ Error: ${error.message}`);
+    }
+},
 );
 
 gmd(
