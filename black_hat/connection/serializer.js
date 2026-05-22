@@ -88,10 +88,79 @@ const serializeMessage = async (ms, Gifted, settings = {}) => {
         body = ms.message.videoMessage.caption;
     }
 
-    const botPrefix = settings.PREFIX || '.';
-    const isCommand = body.startsWith(botPrefix);
-    const command = isCommand ? body.slice(botPrefix.length).trim().split(' ').shift().toLowerCase() : '';
-    const args = typeof body === 'string' ? body.trim().split(/\s+/).slice(1) : [];
+    const prefixes = settings.PREFIX ?? '.';
+
+body = (body || '').toString().trim();
+
+let usedPrefix = '';
+let isCommand = false;
+
+// LOG OBJECT (DEBUG MODE)
+const prefixLog = {
+    input: body,
+    prefixes,
+    usedPrefix: null,
+    isCommand: false,
+    mode: 'unknown',
+    commandDetected: null,
+};
+
+// NULL PREFIX
+if (prefixes === null || prefixes === 'null') {
+    isCommand = true;
+    usedPrefix = '';
+    prefixLog.mode = 'NULL_PREFIX';
+}
+
+// MULTIPLE PREFIXES
+else if (Array.isArray(prefixes)) {
+
+    usedPrefix = prefixes
+        .filter(p => typeof p === 'string' && p.length > 0)
+        .sort((a, b) => b.length - a.length)
+        .find(p => body.startsWith(p)) || '';
+
+    isCommand = usedPrefix.length > 0;
+
+    prefixLog.mode = 'MULTIPLE_PREFIX';
+}
+
+// SINGLE PREFIX
+else if (typeof prefixes === 'string') {
+
+    usedPrefix = body.startsWith(prefixes)
+        ? prefixes
+        : '';
+
+    isCommand = usedPrefix.length > 0;
+
+    prefixLog.mode = 'SINGLE_PREFIX';
+}
+
+// FINAL PROCESS
+const fullBody = isCommand
+    ? body.slice(usedPrefix.length).trim()
+    : '';
+
+const command = isCommand && fullBody
+    ? fullBody.split(/\s+/)[0].toLowerCase()
+    : '';
+
+const args = isCommand && fullBody
+    ? fullBody.split(/\s+/).slice(1)
+    : [];
+
+const q = args.join(' ');
+
+const botPrefix = usedPrefix;
+
+// UPDATE LOGS
+prefixLog.usedPrefix = usedPrefix;
+prefixLog.isCommand = isCommand;
+prefixLog.commandDetected = command || null;
+
+// CONSOLE LOG (DEBUG)
+console.log("⚙️ PREFIX DEBUG LOG:", JSON.stringify(prefixLog, null, 2));
 
     const repliedMessage = ms.message?.extendedTextMessage?.contextInfo?.quotedMessage || null;
     const quoted = type == 'extendedTextMessage' && 
@@ -148,7 +217,7 @@ const serializeMessage = async (ms, Gifted, settings = {}) => {
         command,
         args,
         q: args.join(' '),
-        pushName: ms.pushName || (ms.key.fromMe ? Gifted.user?.name : null) || '𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃 User',
+        pushName: ms.pushName || (ms.key.fromMe ? Gifted.user?.name : null) || 'User',
         quoted,
         repliedMessage,
         mentionedJid,
@@ -171,3 +240,4 @@ module.exports = {
     serializeMessage,
     downloadMediaMessage
 };
+        
