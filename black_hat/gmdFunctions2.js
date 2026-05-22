@@ -1,4 +1,4 @@
-lconst fs = require("fs-extra");
+const fs = require("fs-extra");
 const path = require("path");
 const { pipeline } = require("stream/promises");
 const { getSetting, getAllSettings } = require("./database/settings");
