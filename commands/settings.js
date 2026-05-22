@@ -1019,142 +1019,135 @@ gmd(
     aliases: ["setantilink"],
     react: "⚙️",
     category: "group",
-    description: "Antilink system with modes + allowed/disallowed + reset",
+    description: "Set antilink for this group (on/delete/warn/kick/null/off)",
   },
   async (from, Gifted, conText) => {
-    const { q, reply, react, isSuperUser, isGroup, isAdmin } = conText;
-
+    const { q, reply, react, isSuperUser, isGroup, isAdmin, botPrefix } = conText;
     if (!isGroup) return reply("❌ This command only works in groups!");
     if (!isSuperUser && !isAdmin) return reply("❌ Admin/Owner Only Command!");
 
-    const input = (q || "").toLowerCase().trim();
+    const input = (q || "").trim();
+    const args = input.split(/\s+/);
+    const sub = args[0].toLowerCase();
+    const rest = args.slice(1).join(" ").trim();
 
-    if (!input) {
+    // ── MODE MAP ─────────────────────────────────────────────────────────────
+    const modeMap = {
+      on: "delete",
+      off: "false",
+      true: "delete",
+      false: "false",
+      delete: "delete",
+      kick: "kick",
+      warn: "warn",
+      null: "null",
+    };
+
+    if (modeMap[sub] !== undefined) {
+      const value = modeMap[sub];
+      try {
+        const current = await getGroupSetting(from, "ANTILINK");
+        if (current === value) {
+          const displayVal = value === "false" ? "OFF" : value.toUpperCase();
+          return reply(`⚠️ Antilink is already: *${displayVal}*`);
+        }
+        await setGroupSetting(from, "ANTILINK", value);
+        await react("✅");
+        const displayVal = value === "false" ? "OFF" : value.toUpperCase();
+        let msg = `✅ Antilink: *${displayVal}*`;
+        if (value === "warn") {
+          const warnCount = (await getGroupSetting(from, "ANTILINK_WARN_COUNT")) || 5;
+          msg += `\nKick after *${warnCount}* warnings`;
+        }
+        if (value === "null") {
+          msg += `\nStealthy mode — links deleted silently.`;
+        }
+        return reply(msg);
+      } catch (error) {
+        return reply(`❌ Error: ${error.message}`);
+      }
+    }
+
+    // ── ALLOWED (whitelist) ───────────────────────────────────────────────────
+    if (sub === "allowed" || sub === "whitelist") {
+      if (!rest) {
+        const raw = await getGroupSetting(from, "ANTILINK_ALLOWED");
+        const list = raw && raw !== "0"
+          ? raw.split(",").map(d => d.trim()).filter(Boolean)
+          : [];
+        return reply(
+          list.length
+            ? `✅ *Allowed domains (whitelist):*\n${list.map(d => `• ${d}`).join("\n")}`
+            : "📭 No domains in whitelist."
+        );
+      }
+      const incoming = rest.split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
+      const raw = await getGroupSetting(from, "ANTILINK_ALLOWED");
+      const existing = raw && raw !== "0" ? raw.split(",").map(d => d.trim()).filter(Boolean) : [];
+      const merged = [...new Set([...existing, ...incoming])];
+      await setGroupSetting(from, "ANTILINK_ALLOWED", merged.join(","));
+      await react("✅");
       return reply(
-`❌ Usage:
-
-⚙️ MODES:
-.antilink on
-.antilink delete
-.antilink warn
-.antilink kick
-.antilink null
-.antilink off
-
-🌐 ALLOWED:
-.antilink allowed youtube.com,whatsapp.com
-
-🚫 DISALLOWED:
-.antilink disallowed t.me,bit.ly
-
-♻️ RESET:
-.antilink reset`
+        `✅ *Whitelist updated!*\n${merged.map(d => `• ${d}`).join("\n")}\n\n_These links will never be blocked._`
       );
     }
 
-    const [cmd, ...rest] = input.split(" ");
-    const value = rest.join(" ").trim();
-
-    try {
-
-      // =========================
-      // ⚙️ MODE SYSTEM
-      // =========================
-      const modeMap = {
-        on: "delete",
-        delete: "delete",
-        true: "delete",
-        kick: "kick",
-        warn: "warn",
-        null: "null",
-        off: "false",
-        false: "false"
-      };
-
-      if (modeMap[cmd]) {
-        const mode = modeMap[cmd];
-
-        await setGroupSetting(from, "ANTILINK", mode);
-        await react("✅");
-
-        let msg = `✅ Antilink Mode: *${cmd.toUpperCase()}*`;
-
-        if (mode === "warn") {
-          const warnCount = (await getGroupSetting(from, "ANTILINK_WARN_COUNT")) || 5;
-          msg += `\n⚠️ Kick after ${warnCount} warnings`;
-        }
-
-        if (mode === "null") {
-          msg += `\n🔇 Silent delete enabled`;
-        }
-
-        return reply(msg);
-      }
-
-      // =========================
-      // 🌐 ALLOWED URLS (FIXED SAFETY)
-      // =========================
-      if (cmd === "allowed") {
-        if (!value) return reply("❌ Provide URLs!");
-
-        const list = value
-          .split(",")
-          .map(v => v.trim().toLowerCase())
-          .filter(v => v.length > 0);
-
-        await setGroupSetting(from, "ANTILINK_ALLOWED", JSON.stringify(list));
-        await react("✔️");
-
+    // ── DISALLOWED (blacklist) ────────────────────────────────────────────────
+    if (sub === "disallowed" || sub === "blacklist") {
+      if (!rest) {
+        const raw = await getGroupSetting(from, "ANTILINK_DISALLOWED");
+        const list = raw && raw !== "0"
+          ? raw.split(",").map(d => d.trim()).filter(Boolean)
+          : [];
         return reply(
-`🌐 Allowed URLs Updated:
-
-${list.length ? list.map(v => "✔ " + v).join("\n") : "None"}`
+          list.length
+            ? `🚫 *Blocked domains (blacklist):*\n${list.map(d => `• ${d}`).join("\n")}`
+            : "📭 No domains in blacklist."
         );
       }
-
-      // =========================
-      // 🚫 DISALLOWED URLS (FIXED SAFETY)
-      // =========================
-      if (cmd === "disallowed") {
-        if (!value) return reply("❌ Provide URLs!");
-
-        const list = value
-          .split(",")
-          .map(v => v.trim().toLowerCase())
-          .filter(v => v.length > 0);
-
-        await setGroupSetting(from, "ANTILINK_DISALLOWED", JSON.stringify(list));
-        await react("🚫");
-
-        return reply(
-`🚫 Disallowed URLs Updated:
-
-${list.length ? list.map(v => "❌ " + v).join("\n") : "None"}`
-        );
-      }
-
-      // =========================
-      // ♻️ RESET / CLEAR (FIXED)
-      // =========================
-      if (cmd === "reset" || cmd === "clear") {
-        await setGroupSetting(from, "ANTILINK_ALLOWED", JSON.stringify([]));
-        await setGroupSetting(from, "ANTILINK_DISALLOWED", JSON.stringify([]));
-
-        await react("♻️");
-
-        return reply(
-`♻️ Antilink Reset Done!
-
-✔ Allowed URLs cleared
-✔ Disallowed URLs cleared`
-        );
-      }
-
-      return reply("❌ Invalid option! Type .antilink for help");
-
-    } catch (error) {
-      return reply(`❌ Error: ${error.message}`);
+      const incoming = rest.split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
+      const raw = await getGroupSetting(from, "ANTILINK_DISALLOWED");
+      const existing = raw && raw !== "0" ? raw.split(",").map(d => d.trim()).filter(Boolean) : [];
+      const merged = [...new Set([...existing, ...incoming])];
+      await setGroupSetting(from, "ANTILINK_DISALLOWED", merged.join(","));
+      await react("✅");
+      return reply(
+        `🚫 *Blacklist updated!*\n${merged.map(d => `• ${d}`).join("\n")}\n\n_These links will always be blocked._`
+      );
     }
+
+    // ── RESET / CLEAR ─────────────────────────────────────────────────────────
+    if (sub === "reset" || sub === "clear") {
+      await setGroupSetting(from, "ANTILINK_ALLOWED", "0");
+      await setGroupSetting(from, "ANTILINK_DISALLOWED", "0");
+      await react("✅");
+      return reply("♻️ *Antilink rules reset!*\nWhitelist and blacklist cleared.");
+    }
+
+    // ── STATUS ────────────────────────────────────────────────────────────────
+    if (sub === "status") {
+      const mode = (await getGroupSetting(from, "ANTILINK")) || "false";
+      const warnCount = (await getGroupSetting(from, "ANTILINK_WARN_COUNT")) || 5;
+      const allowedRaw = await getGroupSetting(from, "ANTILINK_ALLOWED");
+      const blockedRaw = await getGroupSetting(from, "ANTILINK_DISALLOWED");
+      const allowed = allowedRaw && allowedRaw !== "0" ? allowedRaw.split(",").map(d => d.trim()).filter(Boolean) : [];
+      const blocked = blockedRaw && blockedRaw !== "0" ? blockedRaw.split(",").map(d => d.trim()).filter(Boolean) : [];
+      const modeLabel = mode === "false" ? "❌ OFF" : `✅ ${mode.toUpperCase()}`;
+      return reply(
+        `*⚙️ Antilink Status*\n\n` +
+        `*Mode:* ${modeLabel}\n` +
+        `*Warn limit:* ${warnCount}\n\n` +
+        `*✅ Whitelist (${allowed.length}):*\n${allowed.length ? allowed.map(d => `• ${d}`).join("\n") : "None"}\n\n` +
+        `*🚫 Blacklist (${blocked.length}):*\n${blocked.length ? blocked.map(d => `• ${d}`).join("\n") : "None"}`
+      );
+    }
+
+    // ── HELP (no valid input) ─────────────────────────────────────────────────
+    const warnCount = (await getGroupSetting(from, "ANTILINK_WARN_COUNT")) || 5;
+    return reply(
+      `❌ Please specify a mode:\n• *on/delete* - Delete links + notify\n• *warn* - Warn user, kick after ${warnCount} warnings\n• *kick* - Delete link & immediately kick user\n• *null* - Silent delete (no message)\n• *off* - Disable antilink\n\n` +
+      `*Whitelist/Blacklist:*\n• *allowed youtube.com,wa.me* - Whitelist domains\n• *disallowed t.me,bit.ly* - Blacklist domains\n• *reset* - Clear all rules\n• *status* - Show current config`
+    );
   }
 );
 
