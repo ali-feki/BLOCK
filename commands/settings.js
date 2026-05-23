@@ -140,77 +140,61 @@ gmd(
     aliases: ["prefix", "botprefix", "changeprefix"],
     react: "⚙️",
     category: "owner",
-    description: "Set bot prefix (null / single / regex support)",
+    description: "Set bot prefix (single char / emoji / null)",
   },
   async (from, Gifted, conText) => {
     const { q, reply, react, isSuperUser } = conText;
+    if (!isSuperUser) return reply("Owner Only Command!");
 
-    if (!isSuperUser) return reply("❌ Owner Only Command!");
+    const input = (q || "").trim();
 
-    if (!q) {
+    if (!input)
       return reply(
-        "❌ Provide prefix mode:\n\n" +
-        "👉 .setprefix .        (single)\n" +
-        "👉 .setprefix !        (single)\n" +
-        "👉 .setprefix null     (no prefix)\n" +
-        "👉 .setprefix ^[.,!,?] (multi regex)"
+        `Please provide a prefix!\n\n` +
+        `Single: .setprefix !\n` +
+        `Emoji: .setprefix 🪖\n` +
+        `No prefix: .setprefix null`
+      );
+
+    // null prefix
+    if (input.toLowerCase() === "null" || input.toLowerCase() === "off") {
+      try {
+        const current = await getSetting("PREFIX");
+        if (current === "null") return reply(`Prefix is already set to null mode.`);
+        await setSetting("PREFIX", "null");
+        await react("✅");
+        return reply(`Prefix removed.\nBot will now respond without any prefix.\n\nExample: ping, menu, alive`);
+      } catch (e) {
+        return reply(`Error: ${e.message}`);
+      }
+    }
+
+    // single character check — emoji bhi 1 visual char hoti hai
+    const chars = [...input];
+    if (chars.length !== 1) {
+      return reply(
+        `Invalid prefix! Only single character allowed.\n\n` +
+        `Allowed:\n` +
+        `- .setprefix !\n` +
+        `- .setprefix .\n` +
+        `- .setprefix 🪖\n\n` +
+        `Not allowed:\n` +
+        `- .setprefix !!\n` +
+        `- .setprefix abc`
       );
     }
 
     try {
-      let value = q.trim();
-
-      // =========================
-      // NORMALIZE INPUT
-      // =========================
-
-      if (value.toLowerCase() === "null") {
-        value = null;
-      }
-
-      // validation
-      if (typeof value === "string") {
-        if (value.length > 20) {
-          return reply("❌ Prefix too long (max 20 chars)");
-        }
-      }
-
       const current = await getSetting("PREFIX");
-
-      // same value check
-      if (current === value) {
-        return reply(`⚠️ Prefix already set to: *${value}*`);
-      }
-
-      // save
-      await setSetting("PREFIX", value);
-
+      if (current === input) return reply(`Prefix is already set to: *${input}*`);
+      await setSetting("PREFIX", input);
       await react("✅");
-
-      // =========================
-      // RESPONSE MESSAGE
-      // =========================
-
-      if (value === null) {
-        return reply("✅ Prefix removed!\n🤖 Bot is now in *NO PREFIX MODE*");
-      }
-
-      if (typeof value === "string" && value.startsWith("^")) {
-        return reply(
-          `✅ Multi-prefix set!\n\n` +
-          `📌 Pattern: *${value}*\n` +
-          `⚡ Example: .ping !ping ?ping`
-        );
-      }
-
-      return reply(`✅ Prefix set to: *${value}*`);
-
-    } catch (error) {
-      await reply(`❌ Error: ${error.message}`);
+      return reply(`Prefix set to: *${input}*\n\nExample: ${input}ping, ${input}menu`);
+    } catch (e) {
+      return reply(`Error: ${e.message}`);
     }
   }
 );
-
 gmd(
   {
     pattern: "setbotname",
