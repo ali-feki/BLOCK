@@ -1,57 +1,6 @@
 const { gmd, getGroupMetadata, getLidMapping } = require("../black_hat");
 const { getGroupSetting, setGroupSetting } = require("../black_hat/database/groupSettings");
-
-gmd(
-  {
-    pattern: "antisticker",
-    react: "🛡️",
-    aliases: ["antistiker", "nosticker", "antist"],
-    category: "group",
-    description: "Enable or Disable Anti Sticker",
-  },
-  async (from, Gifted, conText) => {
-    const {
-      reply,
-      isBotAdmin,
-      isSuperUser,
-      isAdmin,
-      isSuperAdmin,
-      isGroup,
-      args,
-      sender,
-    } = conText;
-
-    if (!isGroup) {
-      return reply("❌ Group only command");
-    }
-
-    if (!isAdmin && !isSuperAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} You are not an admin`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    }
-
-    const option = args[0]?.toLowerCase();
-
-    if (!option || (option !== "on" && option !== "off")) {
-      return reply("Usage:\n.antisticker on\n.antisticker off");
-    }
-
-    try {
-      if (option === "on") {
-        await setGroupSetting(from, "antisticker", true);
-        return reply("✅ Anti Sticker has been enabled");
-      } else {
-        await setGroupSetting(from, "antisticker", false);
-        return reply("❌ Anti Sticker has been disabled");
-      }
-    } catch (e) {
-      console.error("AntiSticker Error:", e);
-      return reply(`❌ Error: ${e.message}`);
-    }
-  },
-);
+const { isSuperUser } = require("../black_hat/database/sudo");
 
 gmd(
   {
@@ -62,36 +11,21 @@ gmd(
     description: "Open Group Chat.",
   },
   async (from, Gifted, conText) => {
-    const { reply, isAdmin, isSuperAdmin, isGroup, isBotAdmin, mek, sender } =
-      conText;
+    const { reply, isAdmin, isSuperAdmin, isGroup, isBotAdmin, mek, sender } = conText;
 
-    if (!isGroup) {
-      return reply("Groups Only Command only");
-    }
-
-    if (!isBotAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} This bot is not an admin`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    }
-
-    if (!isAdmin && !isSuperAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} you are not an admin`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    }
+    if (!isGroup) return reply("Groups only command!");
+    if (!isBotAdmin) return reply("Bot is not an admin!");
+    if (!isAdmin && !isSuperAdmin) return reply("Admin only command!");
 
     try {
       await Gifted.groupSettingUpdate(from, "not_announcement");
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} Group successfully unmuted as you wished!`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    } catch (error) {
-      console.error("Unmute error:", error);
-      return reply(`❌ Failed to unmute group: ${error.message}`);
+      const num = sender.split("@")[0];
+      await Gifted.sendMessage(from, {
+        text: `Group successfully unmuted!`,
+        mentions: [sender],
+      }, { quoted: mek });
+    } catch (e) {
+      return reply(`Failed to unmute group: ${e.message}`);
     }
   },
 );
@@ -105,36 +39,21 @@ gmd(
     description: "Close Group Chat",
   },
   async (from, Gifted, conText) => {
-    const { reply, isAdmin, isSuperAdmin, isGroup, isBotAdmin, mek, sender } =
-      conText;
+    const { reply, isAdmin, isSuperAdmin, isGroup, isBotAdmin, mek, sender } = conText;
 
-    if (!isGroup) {
-      return reply("Groups Only Command only");
-    }
-
-    if (!isBotAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} This bot is not an admin`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    }
-
-    if (!isAdmin && !isSuperAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} you are not an admin`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    }
+    if (!isGroup) return reply("Groups only command!");
+    if (!isBotAdmin) return reply("Bot is not an admin!");
+    if (!isAdmin && !isSuperAdmin) return reply("Admin only command!");
 
     try {
       await Gifted.groupSettingUpdate(from, "announcement");
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} Group successfully muted as you wished!`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
-    } catch (error) {
-      console.error("Mute error:", error);
-      return reply(`❌ Failed to mute group: ${error.message}`);
+      const num = sender.split("@")[0];
+      await Gifted.sendMessage(from, {
+        text: `Group successfully muted!`,
+        mentions: [sender],
+      }, { quoted: mek });
+    } catch (e) {
+      return reply(`Failed to mute group: ${e.message}`);
     }
   },
 );
@@ -147,14 +66,13 @@ gmd(
     description: "Check group metadata",
   },
   async (from, Gifted, conText) => {
-    const { mek, react, newsletterJid, botName } = conText;
+    const { mek, react } = conText;
     try {
       const gInfo = await getGroupMetadata(Gifted, from);
 
       const formatJid = (jid) => {
         if (!jid) return "N/A";
-        const cleanJid = `@${jid.split("@")[0]}`;
-        return cleanJid;
+        return `@${jid.split("@")[0]}`;
       };
 
       const superAdmins = [];
@@ -164,76 +82,46 @@ gmd(
       gInfo.participants.forEach((p) => {
         const formattedJid = formatJid(p.phoneNumber || p.pn || p.jid);
         if (p.admin === "superadmin") {
-          superAdmins.push(`• ${formattedJid} - 👑 Super Admin`);
+          superAdmins.push(`- ${formattedJid} - Owner`);
         } else if (p.admin === "admin") {
-          admins.push(`• ${formattedJid} - 👮 Admin`);
+          admins.push(`- ${formattedJid} - Admin`);
         } else {
-          members.push(`• ${formattedJid} - 👤 Member`);
+          members.push(`- ${formattedJid} - Member`);
         }
       });
 
-      const allParticipants = [...superAdmins, ...admins, ...members].join(
-        "\n",
-      );
-
+      const allParticipants = [...superAdmins, ...admins, ...members].join("\n");
       const allAdmins = [
-        ...superAdmins.map((s) => s.replace(" - 👑 Super Admin", "")),
-        ...admins.map((a) => a.replace(" - 👮 Admin", "")),
+        ...superAdmins.map(s => s.replace(" - Owner", "")),
+        ...admins.map(a => a.replace(" - Admin", "")),
       ];
 
-      const metadataText = `
-📌 *GROUP METADATA* 📌
+      const metadataText =
+        `*Group Metadata*\n\n` +
+        `*ID:* ${gInfo.id}\n` +
+        `*Subject:* ${gInfo.subject || "None"}\n` +
+        `*Subject Owner:* ${formatJid(gInfo.subjectOwnerPn || gInfo.subjectOwnerJid)}\n` +
+        `*Subject Changed:* ${new Date(gInfo.subjectTime * 1000).toLocaleString()}\n` +
+        `*Owner:* ${formatJid(gInfo.ownerPn || gInfo.ownerJid)}\n` +
+        `*Created:* ${new Date(gInfo.creation * 1000).toLocaleString()}\n` +
+        `*Size:* ${gInfo.size} participants\n` +
+        `*Description:* ${gInfo.desc || "None"}\n\n` +
+        `*Admins (${superAdmins.length + admins.length})*\n` +
+        `${allAdmins.join("\n") || "No admins"}\n\n` +
+        `*Participants (${gInfo.participants.length})*\n` +
+        `${allParticipants}\n\n` +
+        `*Group Settings*\n` +
+        `Restrict: ${gInfo.restrict ? "Yes" : "No"}\n` +
+        `Announce: ${gInfo.announce ? "Yes" : "No"}\n` +
+        `Join Approval: ${gInfo.joinApprovalMode ? "Yes" : "No"}\n` +
+        `Member Add: ${gInfo.memberAddMode ? "Yes" : "No"}\n` +
+        `Community: ${gInfo.isCommunity ? "Yes" : "No"}`;
 
-🔹 *ID:* ${gInfo.id}
-🔹 *Subject:* ${gInfo.subject || "None"}
-🔹 *Subject Owner:* ${formatJid(gInfo.subjectOwnerPn || gInfo.subjectOwnerJid)}
-🔹 *Subject Changed:* ${new Date(gInfo.subjectTime * 1000).toLocaleString()}
-🔹 *Owner:* ${formatJid(gInfo.ownerPn || gInfo.ownerJid)}
-🔹 *Creation Date:* ${new Date(gInfo.creation * 1000).toLocaleString()}
-🔹 *Size:* ${gInfo.size} participants
-🔹 *Description:* ${gInfo.desc || "None"}
-🔹 *Description Owner:* ${formatJid(gInfo.descOwnerPn || gInfo.descOwnerJid)}
-🔹 *Description Changed:* ${new Date(gInfo.descTime * 1000).toLocaleString()}
-
-👑 *ADMINS (${superAdmins.length + admins.length})*
-${allAdmins.join("\n") || "No admins"}
-
-👥 *PARTICIPANTS (${gInfo.participants.length})*
-${allParticipants}
-
-ℹ️ *GROUP SETTINGS*
-• Restrict: ${gInfo.restrict ? "✅" : "❌"}
-• Announce: ${gInfo.announce ? "✅" : "❌"}
-• Join Approval: ${gInfo.joinApprovalMode ? "✅" : "❌"}
-• Member Add: ${gInfo.memberAddMode ? "✅" : "❌"}
-• Community: ${gInfo.isCommunity ? "✅" : "❌"}
-    `.trim();
-
-      await Gifted.sendMessage(
-        from,
-        {
-          text: metadataText,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 143,
-            },
-          },
-        },
-        { quoted: mek },
-      );
+      await Gifted.sendMessage(from, { text: metadataText }, { quoted: mek });
       await react("✅");
-    } catch (error) {
-      console.error("Error in metadata command:", error);
+    } catch (e) {
       await react("❌");
-      await Gifted.sendMessage(
-        from,
-        { text: "Failed to fetch group metadata." },
-        { quoted: mek },
-      );
+      await Gifted.sendMessage(from, { text: "Failed to fetch group metadata." }, { quoted: mek });
     }
   },
 );
@@ -247,26 +135,14 @@ gmd(
   },
   async (from, Gifted, conText) => {
     const {
-      reply,
-      react,
-      sender,
-      quotedUser,
-      superUser,
-      isSuperAdmin,
-      isAdmin,
-      isGroup,
-      isBotAdmin,
-      q,
-      mentionedJid,
-      groupAdmins,
-      groupMetadata,
+      reply, react, sender, quotedUser, superUser,
+      isSuperAdmin, isAdmin, isGroup, isBotAdmin,
+      q, mek, mentionedJid, groupAdmins, groupMetadata,
     } = conText;
-    const { getLidMapping } = require("../black_hat/connection/groupCache");
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     const convertLidToJid = async (lid) => {
       if (!lid || !lid.includes("@lid")) return lid;
@@ -287,21 +163,14 @@ gmd(
       targetJid = await convertLidToJid(quotedUser);
     } else if (q) {
       const num = q.replace(/[^0-9]/g, "");
-      if (num.length >= 10) {
-        targetJid = num + "@s.whatsapp.net";
-      }
+      if (num.length >= 10) targetJid = num + "@s.whatsapp.net";
     }
 
     if (!targetJid || targetJid.includes("@lid")) {
-      if (
-        targetJid &&
-        targetJid.includes("@lid") &&
-        groupMetadata?.participants
-      ) {
+      if (targetJid && targetJid.includes("@lid") && groupMetadata?.participants) {
         const lidNum = targetJid.split("@")[0];
         const found = groupMetadata.participants.find(
-          (p) =>
-            p.lid?.split("@")[0] === lidNum || p.id?.split("@")[0] === lidNum,
+          p => p.lid?.split("@")[0] === lidNum || p.id?.split("@")[0] === lidNum
         );
         if (found?.id) targetJid = found.id;
         else if (found?.pn) targetJid = found.pn + "@s.whatsapp.net";
@@ -310,36 +179,32 @@ gmd(
 
     if (!targetJid || targetJid.includes("@lid")) {
       await react("❌");
-      return reply(
-        "❌ Could not identify user. Please provide their number directly.\nExample: .demote 255794469700",
-      );
+      return reply("Could not identify user. Provide their number.\nExample: .demote <number>");
     }
 
     if (!targetJid.includes("@")) targetJid += "@s.whatsapp.net";
 
-    const { isSuperUser } = require("../black_hat/database/sudo");
     const targetNum = targetJid.split("@")[0];
     const isTargetSuperUser = await isSuperUser(targetJid, Gifted);
-    
-    const standardizedSuperUsers = superUser.map((u) => u.split("@")[0]);
+    const standardizedSuperUsers = superUser.map(u => u.split("@")[0]);
+
     if (isTargetSuperUser || standardizedSuperUsers.includes(targetNum)) {
       await react("❌");
-      return reply("❌ I cannot demote a superuser!");
+      return reply("Cannot demote a superuser!");
     }
 
     const groupSuperAdmins = conText.groupSuperAdmins || [];
-    const adminNums = groupAdmins.map((a) => a.split("@")[0]);
-    const superAdminNums = groupSuperAdmins.map((a) => a.split("@")[0]);
+    const adminNums = groupAdmins.map(a => a.split("@")[0]);
+    const superAdminNums = groupSuperAdmins.map(a => a.split("@")[0]);
     const allAdminNums = [...adminNums, ...superAdminNums];
 
     let isTargetAdmin = allAdminNums.includes(targetNum);
     let isSuperAdminTarget = superAdminNums.includes(targetNum);
 
     if (groupMetadata?.participants) {
-      const participant = groupMetadata.participants.find((p) => {
+      const participant = groupMetadata.participants.find(p => {
         const pNum = (p.id || p.pn || p.phoneNumber || "").split("@")[0];
-        const pPn = (p.pn || "").split("@")[0];
-        return pNum === targetNum || pPn === targetNum;
+        return pNum === targetNum || (p.pn || "").split("@")[0] === targetNum;
       });
       if (participant?.admin) {
         isTargetAdmin = true;
@@ -348,43 +213,35 @@ gmd(
     }
 
     if (!isTargetAdmin) {
-      return reply(`❌ @${targetNum} is not an admin.`, {
+      return await Gifted.sendMessage(from, {
+        text: `@${targetNum} is not an admin.`,
         mentions: [targetJid],
-        contextInfo: { mentionedJid: [targetJid] },
-      });
+      }, { quoted: mek });
     }
 
     if (isSuperAdminTarget) {
-      return reply(
-        `❌ @${targetNum} is the group owner and cannot be demoted.`,
-        {
-          mentions: [targetJid],
-          contextInfo: { mentionedJid: [targetJid] },
-        },
-      );
+      return await Gifted.sendMessage(from, {
+        text: `@${targetNum} is the group owner and cannot be demoted.`,
+        mentions: [targetJid],
+      }, { quoted: mek });
     }
 
     try {
       await Gifted.groupParticipantsUpdate(from, [targetJid], "demote");
       await react("✅");
-      await reply(`👑 @${targetNum} is no longer an admin.`, {
+      await Gifted.sendMessage(from, {
+        text: `@${targetNum} is no longer an admin.`,
         mentions: [targetJid],
-        contextInfo: { mentionedJid: [targetJid] },
-      });
-    } catch (error) {
+      }, { quoted: mek });
+    } catch (e) {
       await react("❌");
-      if (
-        error.message?.includes("403") ||
-        error.message?.toLowerCase().includes("forbidden")
-      ) {
-        await reply(
-          `❌ Cannot demote @${targetNum}. They may be a group owner or have higher privileges.`,
-          {
-            mentions: [targetJid],
-          },
-        );
+      if (e.message?.includes("403") || e.message?.toLowerCase().includes("forbidden")) {
+        await Gifted.sendMessage(from, {
+          text: `Cannot demote @${targetNum}. They may be a group owner.`,
+          mentions: [targetJid],
+        }, { quoted: mek });
       } else {
-        await reply(`❌ Failed to demote: ${error.message}`);
+        return reply(`Failed to demote: ${e.message}`);
       }
     }
   },
@@ -400,26 +257,15 @@ gmd(
   },
   async (from, Gifted, conText) => {
     const {
-      reply,
-      react,
-      sender,
-      quotedUser,
-      isSuperAdmin,
-      isAdmin,
-      isGroup,
-      isBotAdmin,
-      q,
-      mentionedJid,
-      groupAdmins,
-      groupSuperAdmins,
-      groupMetadata,
+      reply, react, sender, quotedUser,
+      isSuperAdmin, isAdmin, isGroup, isBotAdmin,
+      q, mentionedJid, groupAdmins, mek,
+      groupSuperAdmins, groupMetadata,
     } = conText;
-    const { getLidMapping } = require("../black_hat/connection/groupCache");
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     const convertLidToJid = async (lid) => {
       if (!lid || !lid.includes("@lid")) return lid;
@@ -440,21 +286,14 @@ gmd(
       targetJid = await convertLidToJid(quotedUser);
     } else if (q) {
       const num = q.replace(/[^0-9]/g, "");
-      if (num.length >= 10) {
-        targetJid = num + "@s.whatsapp.net";
-      }
+      if (num.length >= 10) targetJid = num + "@s.whatsapp.net";
     }
 
     if (!targetJid || targetJid.includes("@lid")) {
-      if (
-        targetJid &&
-        targetJid.includes("@lid") &&
-        groupMetadata?.participants
-      ) {
+      if (targetJid && targetJid.includes("@lid") && groupMetadata?.participants) {
         const lidNum = targetJid.split("@")[0];
         const found = groupMetadata.participants.find(
-          (p) =>
-            p.lid?.split("@")[0] === lidNum || p.id?.split("@")[0] === lidNum,
+          p => p.lid?.split("@")[0] === lidNum || p.id?.split("@")[0] === lidNum
         );
         if (found?.id) targetJid = found.id;
         else if (found?.pn) targetJid = found.pn + "@s.whatsapp.net";
@@ -463,30 +302,23 @@ gmd(
 
     if (!targetJid || targetJid.includes("@lid")) {
       await react("❌");
-      return reply(
-        "❌ Could not identify user. Please provide their number directly.\nExample: .promote 255794469700",
-      );
+      return reply("Could not identify user. Provide their number.\nExample: .promote <number>");
     }
 
     if (!targetJid.includes("@")) targetJid += "@s.whatsapp.net";
 
     const targetNum = targetJid.split("@")[0];
-    const adminNums = groupAdmins
-      ? groupAdmins.map((a) => a.split("@")[0])
-      : [];
-    const superAdminNums = groupSuperAdmins
-      ? groupSuperAdmins.map((a) => a.split("@")[0])
-      : [];
+    const adminNums = groupAdmins ? groupAdmins.map(a => a.split("@")[0]) : [];
+    const superAdminNums = groupSuperAdmins ? groupSuperAdmins.map(a => a.split("@")[0]) : [];
     const allAdminNums = [...adminNums, ...superAdminNums];
 
     let isAlreadyAdmin = allAdminNums.includes(targetNum);
     let isSuperAdminTarget = superAdminNums.includes(targetNum);
 
     if (groupMetadata?.participants) {
-      const participant = groupMetadata.participants.find((p) => {
+      const participant = groupMetadata.participants.find(p => {
         const pNum = (p.id || p.pn || p.phoneNumber || "").split("@")[0];
-        const pPn = (p.pn || "").split("@")[0];
-        return pNum === targetNum || pPn === targetNum;
+        return pNum === targetNum || (p.pn || "").split("@")[0] === targetNum;
       });
       if (participant?.admin) {
         isAlreadyAdmin = true;
@@ -495,43 +327,35 @@ gmd(
     }
 
     if (isSuperAdminTarget) {
-      return reply(
-        `❌ @${targetNum} is the group owner and is already an admin.`,
-        {
-          mentions: [targetJid],
-          contextInfo: { mentionedJid: [targetJid] },
-        },
-      );
+      return await Gifted.sendMessage(from, {
+        text: `@${targetNum} is the group owner and is already an admin.`,
+        mentions: [targetJid],
+      }, { quoted: mek });
     }
 
     if (isAlreadyAdmin) {
-      return reply(`❌ @${targetNum} is already an admin.`, {
+      return await Gifted.sendMessage(from, {
+        text: `@${targetNum} is already an admin.`,
         mentions: [targetJid],
-        contextInfo: { mentionedJid: [targetJid] },
-      });
+      }, { quoted: mek });
     }
 
     try {
       await Gifted.groupParticipantsUpdate(from, [targetJid], "promote");
       await react("✅");
-      await reply(`👑 @${targetNum} is now an admin.`, {
+      await Gifted.sendMessage(from, {
+        text: `@${targetNum} is now an admin.`,
         mentions: [targetJid],
-        contextInfo: { mentionedJid: [targetJid] },
-      });
-    } catch (error) {
+      }, { quoted: mek });
+    } catch (e) {
       await react("❌");
-      if (
-        error.message?.includes("403") ||
-        error.message?.toLowerCase().includes("forbidden")
-      ) {
-        await reply(
-          `❌ Cannot promote @${targetNum}. They may not be a group member.`,
-          {
-            mentions: [targetJid],
-          },
-        );
+      if (e.message?.includes("403") || e.message?.toLowerCase().includes("forbidden")) {
+        await Gifted.sendMessage(from, {
+          text: `Cannot promote @${targetNum}. They may not be a group member.`,
+          mentions: [targetJid],
+        }, { quoted: mek });
       } else {
-        await reply(`❌ Failed to promote: ${error.message}`);
+        return reply(`Failed to promote: ${e.message}`);
       }
     }
   },
@@ -547,25 +371,14 @@ gmd(
   },
   async (from, Gifted, conText) => {
     const {
-      reply,
-      react,
-      sender,
-      quotedUser,
-      superUser,
-      isSuperAdmin,
-      isAdmin,
-      isGroup,
-      isBotAdmin,
-      q,
-      mentionedJid,
-      groupMetadata,
+      reply, react, sender, quotedUser, superUser,
+      isSuperAdmin, isAdmin, isGroup, isBotAdmin,
+      q, mek, mentionedJid, groupMetadata,
     } = conText;
-    const { getLidMapping } = require("../black_hat/connection/groupCache");
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     const convertLidToJid = async (lid) => {
       if (!lid || !lid.includes("@lid")) return lid;
@@ -586,21 +399,14 @@ gmd(
       targetJid = await convertLidToJid(quotedUser);
     } else if (q) {
       const num = q.replace(/[^0-9]/g, "");
-      if (num.length >= 10) {
-        targetJid = num + "@s.whatsapp.net";
-      }
+      if (num.length >= 10) targetJid = num + "@s.whatsapp.net";
     }
 
     if (!targetJid || targetJid.includes("@lid")) {
-      if (
-        targetJid &&
-        targetJid.includes("@lid") &&
-        groupMetadata?.participants
-      ) {
+      if (targetJid && targetJid.includes("@lid") && groupMetadata?.participants) {
         const lidNum = targetJid.split("@")[0];
         const found = groupMetadata.participants.find(
-          (p) =>
-            p.lid?.split("@")[0] === lidNum || p.id?.split("@")[0] === lidNum,
+          p => p.lid?.split("@")[0] === lidNum || p.id?.split("@")[0] === lidNum
         );
         if (found?.id) targetJid = found.id;
         else if (found?.pn) targetJid = found.pn + "@s.whatsapp.net";
@@ -609,71 +415,61 @@ gmd(
 
     if (!targetJid || targetJid.includes("@lid")) {
       await react("❌");
-      return reply(
-        "❌ Could not identify user. Please provide their number directly.\nExample: .kick 255794469700",
-      );
+      return reply("Could not identify user. Provide their number.\nExample: .kick 923xxxxxxxxx");
     }
 
     if (!targetJid.includes("@")) targetJid += "@s.whatsapp.net";
 
     const targetNum = targetJid.split("@")[0];
-    const standardizedSuperUsers = superUser.map((u) => u.split("@")[0]);
+    const standardizedSuperUsers = superUser.map(u => u.split("@")[0]);
+
     if (standardizedSuperUsers.includes(targetNum)) {
       await react("❌");
-      return reply("❌ I cannot kick my creator!");
+      return reply("Cannot kick my creator!");
     }
 
     const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
     if (targetJid.toLowerCase() === botJid.toLowerCase()) {
       await react("❌");
-      return reply("❌ I cannot kick myself!");
+      return reply("Cannot kick myself!");
     }
 
     const groupSuperAdmins = conText.groupSuperAdmins || [];
-    const superAdminNums = groupSuperAdmins.map((a) => a.split("@")[0]);
+    const superAdminNums = groupSuperAdmins.map(a => a.split("@")[0]);
     let isSuperAdminTarget = superAdminNums.includes(targetNum);
 
     if (groupMetadata?.participants) {
-      const participant = groupMetadata.participants.find((p) => {
+      const participant = groupMetadata.participants.find(p => {
         const pNum = (p.id || p.pn || p.phoneNumber || "").split("@")[0];
-        const pPn = (p.pn || "").split("@")[0];
-        return pNum === targetNum || pPn === targetNum;
+        return pNum === targetNum || (p.pn || "").split("@")[0] === targetNum;
       });
       if (participant?.admin === "superadmin") isSuperAdminTarget = true;
     }
 
     if (isSuperAdminTarget) {
       await react("❌");
-      return reply(
-        `❌ @${targetNum} is the group owner and cannot be kicked.`,
-        {
-          mentions: [targetJid],
-          contextInfo: { mentionedJid: [targetJid] },
-        },
-      );
+      return await Gifted.sendMessage(from, {
+        text: `@${targetNum} is the group owner and cannot be kicked.`,
+        mentions: [targetJid],
+      }, { quoted: mek });
     }
 
     try {
       await Gifted.groupParticipantsUpdate(from, [targetJid], "remove");
       await react("✅");
-      await reply(`🚫 @${targetNum} has been removed from the group.`, {
+      await Gifted.sendMessage(from, {
+        text: `@${targetNum} has been removed from the group.`,
         mentions: [targetJid],
-        contextInfo: { mentionedJid: [targetJid] },
-      });
-    } catch (error) {
+      }, { quoted: mek });
+    } catch (e) {
       await react("❌");
-      if (
-        error.message?.includes("403") ||
-        error.message?.toLowerCase().includes("forbidden")
-      ) {
-        await reply(
-          `❌ Cannot kick @${targetNum}. They may be an admin or not in the group.`,
-          {
-            mentions: [targetJid],
-          },
-        );
+      if (e.message?.includes("403") || e.message?.toLowerCase().includes("forbidden")) {
+        await Gifted.sendMessage(from, {
+          text: `Cannot kick @${targetNum}. They may be an admin or not in the group.`,
+          mentions: [targetJid],
+        }, { quoted: mek });
       } else {
-        await reply(`❌ Failed to remove user: ${error.message}`);
+        return reply(`Failed to remove user: ${e.message}`);
       }
     }
   },
@@ -682,41 +478,29 @@ gmd(
 gmd(
   {
     pattern: "add",
-    aliases: ["invite"],
     react: "➕",
     category: "group",
     description: "Add a user to the group.",
   },
   async (from, Gifted, conText) => {
     const {
-      reply,
-      react,
-      isSuperAdmin,
-      isAdmin,
-      isGroup,
-      isBotAdmin,
-      q,
-      groupMetadata,
+      reply, react, isSuperAdmin, isAdmin,
+      isGroup, isBotAdmin, q, mek, groupMetadata,
     } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     if (!q) {
       await react("❌");
-      return reply(
-        "❌ Please provide the number to add.\nExample: .add 255794469700",
-      );
+      return reply("Please provide the number to add.\nExample: .add 923xxxxxxxxx");
     }
 
     const num = q.replace(/[^0-9]/g, "");
     if (num.length < 10) {
       await react("❌");
-      return reply(
-        "❌ Invalid number format. Please provide a valid phone number.",
-      );
+      return reply("Invalid number format.");
     }
 
     const targetJid = num + "@s.whatsapp.net";
@@ -725,80 +509,67 @@ gmd(
       const [result] = await Gifted.onWhatsApp(num);
       if (!result || !result.exists) {
         await react("❌");
-        return reply(`❌ The number ${num} is not registered on WhatsApp.`);
+        return reply(`${num} is not registered on WhatsApp.`);
       }
     } catch (err) {
       await react("⚠️");
-      return reply(
-        `⚠️ Could not verify if ${num} is on WhatsApp. Please try again.`,
-      );
+      return reply(`Could not verify if ${num} is on WhatsApp. Try again.`);
     }
 
     if (groupMetadata?.participants) {
-      const alreadyInGroup = groupMetadata.participants.find((p) => {
+      const alreadyIn = groupMetadata.participants.find(p => {
         const pNum = (p.id || p.pn || p.phoneNumber || "").split("@")[0];
         return pNum === num;
       });
-      if (alreadyInGroup) {
+      if (alreadyIn) {
         await react("❌");
-        return reply(`❌ @${num} is already in this group.`, {
+        return await Gifted.sendMessage(from, {
+          text: `@${num} is already in this group.`,
           mentions: [targetJid],
-          contextInfo: { mentionedJid: [targetJid] },
-        });
+        }, { quoted: mek });
       }
     }
 
     try {
-      const result = await Gifted.groupParticipantsUpdate(
-        from,
-        [targetJid],
-        "add",
-      );
+      const result = await Gifted.groupParticipantsUpdate(from, [targetJid], "add");
       const status = result[0]?.status;
 
       if (status === "403") {
         const meta = await Gifted.groupMetadata(from);
-        const groupName = meta.subject;
         const inviteCode = await Gifted.groupInviteCode(from);
         const inviteLink = `https://chat.whatsapp.com/${inviteCode}`;
 
         await Gifted.sendMessage(targetJid, {
-          text: `👋 Hello! You've been invited to join *${groupName}*\n\n🔗 *Invite Link:* ${inviteLink}\n\n_Click the link above to join the group._`,
+          text: `You have been invited to join *${meta.subject}*\n\nInvite Link: ${inviteLink}`,
         });
 
         await react("⚠️");
-        await reply(
-          `⚠️ @${num} has privacy settings that prevent adding them directly. An invite link has been sent to their DM.`,
-          {
-            mentions: [targetJid],
-            contextInfo: { mentionedJid: [targetJid] },
-          },
-        );
+        await Gifted.sendMessage(from, {
+          text: `@${num} has privacy settings preventing direct add. Invite link sent to their DM.`,
+          mentions: [targetJid],
+        }, { quoted: mek });
       } else if (status === "408") {
         await react("❌");
-        await reply(
-          `❌ @${num} has left this group recently and cannot be added yet.`,
-          {
-            mentions: [targetJid],
-            contextInfo: { mentionedJid: [targetJid] },
-          },
-        );
+        await Gifted.sendMessage(from, {
+          text: `@${num} left this group recently and cannot be added yet.`,
+          mentions: [targetJid],
+        }, { quoted: mek });
       } else if (status === "409") {
         await react("❌");
-        await reply(`❌ @${num} is already in this group.`, {
+        await Gifted.sendMessage(from, {
+          text: `@${num} is already in this group.`,
           mentions: [targetJid],
-          contextInfo: { mentionedJid: [targetJid] },
-        });
+        }, { quoted: mek });
       } else {
         await react("✅");
-        await reply(`✅ @${num} has been added to the group.`, {
+        await Gifted.sendMessage(from, {
+          text: `@${num} has been added to the group.`,
           mentions: [targetJid],
-          contextInfo: { mentionedJid: [targetJid] },
-        });
+        }, { quoted: mek });
       }
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      await reply(`❌ Failed to add user: ${error.message}`);
+      return reply(`Failed to add user: ${e.message}`);
     }
   },
 );
@@ -812,62 +583,26 @@ gmd(
     description: "Get the group invite link.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      isAdmin,
-      isSuperAdmin,
-      isGroup,
-      isBotAdmin,
-      mek,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, react, isAdmin, isSuperAdmin, isGroup, isBotAdmin, mek } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     try {
       const meta = await Gifted.groupMetadata(from);
-      const groupName = meta.subject;
-      const participantCount = meta.participants.length;
-      const adminCount = meta.participants.filter(
-        (p) => p.admin === "admin" || p.admin === "superadmin",
-      ).length;
-
       const inviteCode = await Gifted.groupInviteCode(from);
       const inviteLink = `https://chat.whatsapp.com/${inviteCode}`;
+      const adminCount = meta.participants.filter(p => p.admin === "admin" || p.admin === "superadmin").length;
 
-      const linkText =
-        `*🔗 Group Invite Link*\n\n` +
-        `*Group:* ${groupName}\n` +
-        `*Participants:* ${participantCount}\n` +
-        `*Admins:* ${adminCount}\n\n` +
-        `*Link:* ${inviteLink}`;
+      const text =
+        `*Here is Group Invite Link:*\n${inviteLink}`;
 
-      await Gifted.sendMessage(
-        from,
-        {
-          text: linkText,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
-
+      await Gifted.sendMessage(from, { text }, { quoted: mek });
       await react("✅");
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      await reply(`❌ Failed to get invite link: ${error.message}`);
+      return reply(`Failed to get invite link: ${e.message}`);
     }
   },
 );
@@ -875,136 +610,80 @@ gmd(
 gmd(
   {
     pattern: "newgroup",
-    aliases: ["newgc", "creategroup", "creategroup"],
+    aliases: ["newgc", "creategroup"],
     react: "🆕",
     category: "group",
-    description: "Create a new group with the bot as admin.",
+    description: "Create a new group.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isSuperUser,
-      q,
-      mek,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, react, sender, isSuperUser, q, mek } = conText;
 
-    if (!isSuperUser) return reply("❌ Owner Only Command!");
+    if (!isSuperUser) return reply("Owner Only Command!");
 
     if (!q || !q.trim()) {
       await react("❌");
-      return reply(
-        "❌ Please provide a group name.\nExample: .newgroup 𝑩𝑳𝑨𝑪𝑲 𝑯𝑨𝑻 𝑯𝑨𝑪𝑲𝑬𝑹 🥷🥷",
-      );
+      return reply("Please provide a group name.\nExample: .newgroup My Group");
     }
 
-    const groupName = q.trim();
-
     try {
-      const group = await Gifted.groupCreate(groupName, [sender]);
-
+      const group = await Gifted.groupCreate(q.trim(), [sender]);
       const inviteCode = await Gifted.groupInviteCode(group.id);
       const inviteLink = `https://chat.whatsapp.com/${inviteCode}`;
 
-      const successText =
-        `*🆕 Group Created Successfully!*\n\n` +
-        `*Group Name:* ${groupName}\n` +
-        `*Group ID:* ${group.id}\n\n` +
-        `*Invite Link:* ${inviteLink}`;
-
-      await Gifted.sendMessage(
-        from,
-        {
-          text: successText,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
+      await Gifted.sendMessage(from, {
+        text:
+          `*Group Created!*\n\n` +
+          `*Name:* ${q.trim()}\n` +
+          `*ID:* ${group.id}\n\n` +
+          `*Invite Link:* ${inviteLink}`,
+      }, { quoted: mek });
 
       await react("✅");
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      await reply(`❌ Failed to create group: ${error.message}`);
+      return reply(`Failed to create group: ${e.message}`);
     }
   },
 );
 
 gmd(
   {
-    pattern: "killgc",
-    aliases: ["terminategc", "destroygc", "nukegc"],
+    pattern: "kickall",
+    aliases: ["terminategc", "destroygc", "end"],
     react: "💀",
     category: "group",
     description: "Terminate group - removes all members and bot leaves.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isSuperUser,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      mek,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, react, sender, isSuperUser, isGroup, isBotAdmin, isAdmin, isSuperAdmin, mek } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isSuperUser) return reply("❌ Owner Only Command!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isSuperUser) return reply("Owner Only Command!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     try {
-      await Gifted.sendMessage(
-        from,
-        {
-          text: `⚠️ *WARNING* ⚠️\n\n💀 *Group will be terminated now...*\n\n_All members will be removed._\n\n⚠️ _Using this command frequently might lead to WhatsApp bans._`,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
+      await Gifted.sendMessage(from, {
+        text: `*WARNING*\n\nGroup will be terminated now...\nAll members will be removed.`,
+      }, { quoted: mek });
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise(r => setTimeout(r, 1000));
 
       const meta = await Gifted.groupMetadata(from);
-      const participants = meta.participants;
       const botJid = Gifted.user?.id?.split(":")[0] + "@s.whatsapp.net";
 
-      const membersToRemove = participants
-        .filter((p) => p.id !== botJid && p.id !== sender)
-        .map((p) => p.id);
+      const membersToRemove = meta.participants
+        .filter(p => p.id !== botJid && p.id !== sender)
+        .map(p => p.id);
 
       if (membersToRemove.length > 0) {
         await Gifted.groupParticipantsUpdate(from, membersToRemove, "remove");
       }
 
       await Gifted.groupLeave(from);
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      await reply(`❌ Failed to terminate group: ${error.message}`);
+      return reply(`Failed to terminate group: ${e.message}`);
     }
   },
 );
@@ -1015,50 +694,32 @@ gmd(
     aliases: ["approve"],
     react: "✅",
     category: "group",
-    description: "Accept a pending join request. Usage: .accept 255794469700",
+    description: "Accept a pending join request.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      args,
-      botPrefix,
-    } = conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, args, botPrefix } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
-
-    if (!args[0])
-      return reply(
-        `❌ Please provide a phone number.\n\n*Usage:* ${botPrefix}accept 255794469700`,
-      );
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
+    if (!args[0]) return reply(`Please provide a phone number.\nUsage: ${botPrefix}accept 923xxxxxxxxx`);
 
     try {
       const number = args[0].replace(/[^0-9]/g, "");
       const userJid = `${number}@s.whatsapp.net`;
 
       await Gifted.groupRequestParticipantsUpdate(from, [userJid], "approve");
-
       await react("✅");
-      return reply(`✅ Successfully approved @${number}'s join request!`, {
+      await Gifted.sendMessage(from, {
+        text: `@${number}'s join request approved!`,
         mentions: [userJid],
       });
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      if (
-        error.message?.includes("not-found") ||
-        error.message?.includes("item-not-found")
-      ) {
-        return reply("❌ No pending join request found for this number.");
+      if (e.message?.includes("not-found") || e.message?.includes("item-not-found")) {
+        return reply("No pending join request found for this number.");
       }
-      return reply(`❌ Failed to accept request: ${error.message}`);
+      return reply(`Failed to accept request: ${e.message}`);
     }
   },
 );
@@ -1069,50 +730,32 @@ gmd(
     aliases: ["decline"],
     react: "❌",
     category: "group",
-    description: "Reject a pending join request. Usage: .reject 255794469700",
+    description: "Reject a pending join request.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      args,
-      botPrefix,
-    } = conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, args, botPrefix } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
-
-    if (!args[0])
-      return reply(
-        `❌ Please provide a phone number.\n\n*Usage:* ${botPrefix}reject 255794469700`,
-      );
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
+    if (!args[0]) return reply(`Please provide a phone number.\nUsage: ${botPrefix}reject 923xxxxxxxxx`);
 
     try {
       const number = args[0].replace(/[^0-9]/g, "");
       const userJid = `${number}@s.whatsapp.net`;
 
       await Gifted.groupRequestParticipantsUpdate(from, [userJid], "reject");
-
       await react("✅");
-      return reply(`✅ Successfully rejected @${number}'s join request!`, {
+      await Gifted.sendMessage(from, {
+        text: `@${number}'s join request rejected!`,
         mentions: [userJid],
       });
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      if (
-        error.message?.includes("not-found") ||
-        error.message?.includes("item-not-found")
-      ) {
-        return reply("❌ No pending join request found for this number.");
+      if (e.message?.includes("not-found") || e.message?.includes("item-not-found")) {
+        return reply("No pending join request found for this number.");
       }
-      return reply(`❌ Failed to reject request: ${error.message}`);
+      return reply(`Failed to reject request: ${e.message}`);
     }
   },
 );
@@ -1123,34 +766,28 @@ gmd(
     aliases: ["approveall"],
     react: "✅",
     category: "group",
-    description: "Accept all pending join requests in the group.",
+    description: "Accept all pending join requests.",
   },
   async (from, Gifted, conText) => {
-    const { reply, react, sender, isGroup, isBotAdmin, isAdmin, isSuperAdmin } =
-      conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     try {
       const pendingRequests = await Gifted.groupRequestParticipantsList(from);
-
       if (!pendingRequests || pendingRequests.length === 0) {
-        return reply("📭 No pending join requests in this group.");
+        return reply("No pending join requests in this group.");
       }
 
-      const jids = pendingRequests.map((r) => r.jid);
+      const jids = pendingRequests.map(r => r.jid);
       await Gifted.groupRequestParticipantsUpdate(from, jids, "approve");
-
       await react("✅");
-      return reply(
-        `✅ Successfully approved *${jids.length}* pending join request(s)!`,
-      );
-    } catch (error) {
+      return reply(`Successfully approved *${jids.length}* pending join request(s)!`);
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to accept all requests: ${error.message}`);
+      return reply(`Failed to accept all requests: ${e.message}`);
     }
   },
 );
@@ -1161,34 +798,28 @@ gmd(
     aliases: ["declineall"],
     react: "❌",
     category: "group",
-    description: "Reject all pending join requests in the group.",
+    description: "Reject all pending join requests.",
   },
   async (from, Gifted, conText) => {
-    const { reply, react, sender, isGroup, isBotAdmin, isAdmin, isSuperAdmin } =
-      conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     try {
       const pendingRequests = await Gifted.groupRequestParticipantsList(from);
-
       if (!pendingRequests || pendingRequests.length === 0) {
-        return reply("📭 No pending join requests in this group.");
+        return reply("No pending join requests in this group.");
       }
 
-      const jids = pendingRequests.map((r) => r.jid);
+      const jids = pendingRequests.map(r => r.jid);
       await Gifted.groupRequestParticipantsUpdate(from, jids, "reject");
-
       await react("✅");
-      return reply(
-        `✅ Successfully rejected *${jids.length}* pending join request(s)!`,
-      );
-    } catch (error) {
+      return reply(`Successfully rejected *${jids.length}* pending join request(s)!`);
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to reject all requests: ${error.message}`);
+      return reply(`Failed to reject all requests: ${e.message}`);
     }
   },
 );
@@ -1196,33 +827,29 @@ gmd(
 gmd(
   {
     pattern: "online",
-    aliases: ["listonline", "whos online", "whosonline"],
+    aliases: ["listonline", "whosonline"],
     react: "🟢",
     category: "group",
     description: "List members who are currently online in the group.",
   },
   async (from, Gifted, conText) => {
-    const { reply, react, sender, isGroup, mek, botName, newsletterJid } =
-      conText;
+    const { reply, react, isGroup, mek } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
+    if (!isGroup) return reply("This command only works in groups!");
 
     try {
-      await reply("🔍 Checking online members... Please wait...");
+      await reply("Checking online members... Please wait...");
 
       const groupMeta = await Gifted.groupMetadata(from);
       const participants = groupMeta.participants;
-
       const onlineMembers = [];
       const presenceData = new Map();
 
       const presenceHandler = (update) => {
-        const chatJid = update.id;
         if (update.presences) {
           for (const [jid, presence] of Object.entries(update.presences)) {
             presenceData.set(jid, presence);
-            const numOnly = jid.split("@")[0];
-            presenceData.set(numOnly, presence);
+            presenceData.set(jid.split("@")[0], presence);
           }
         }
       };
@@ -1233,48 +860,32 @@ gmd(
         const batchSize = 5;
         for (let i = 0; i < participants.length; i += batchSize) {
           const batch = participants.slice(i, i + batchSize);
-          await Promise.all(
-            batch.map(async (p) => {
-              const jid = p.id || p.jid;
-              try {
-                await Gifted.presenceSubscribe(jid);
-              } catch (e) {}
-            }),
-          );
-          await new Promise((r) => setTimeout(r, 500));
+          await Promise.all(batch.map(async p => {
+            try { await Gifted.presenceSubscribe(p.id || p.jid); } catch (e) {}
+          }));
+          await new Promise(r => setTimeout(r, 500));
         }
 
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 2000));
 
         for (const p of participants) {
           const participantId = p.id || p.jid;
           const numOnly = participantId.split("@")[0];
-
-          let presence =
-            presenceData.get(participantId) || presenceData.get(numOnly);
+          let presence = presenceData.get(participantId) || presenceData.get(numOnly);
 
           if (!presence && p.pn) {
-            presence =
-              presenceData.get(p.pn) || presenceData.get(p.pn.split("@")[0]);
+            presence = presenceData.get(p.pn) || presenceData.get(p.pn.split("@")[0]);
           }
 
-          if (
-            presence?.lastKnownPresence === "composing" ||
-            presence?.lastKnownPresence === "recording" ||
-            presence?.lastKnownPresence === "available"
-          ) {
+          if (["composing", "recording", "available"].includes(presence?.lastKnownPresence)) {
             let displayJid = participantId;
             if (participantId.endsWith("@lid")) {
               const cachedJid = getLidMapping(participantId);
-              if (cachedJid) {
-                displayJid = cachedJid;
-              } else if (p.pn) {
-                displayJid = p.pn;
-              }
+              if (cachedJid) displayJid = cachedJid;
+              else if (p.pn) displayJid = p.pn;
             }
             const number = displayJid.split("@")[0];
-            const name = p.notify || p.name || number;
-            onlineMembers.push({ jid: displayJid, name, number });
+            onlineMembers.push({ jid: displayJid, name: p.notify || p.name || number, number });
           }
         }
       } finally {
@@ -1283,43 +894,23 @@ gmd(
 
       if (onlineMembers.length === 0) {
         await react("😴");
-        return reply(
-          "😴 No members are currently typing or recording.\n\n_Note: This only detects active typing/recording presence._",
-        );
+        return reply("No members are currently typing or recording.");
       }
 
-      const mentions = onlineMembers.map((m) => m.jid);
-      const memberList = onlineMembers
-        .map((m, i) => `${i + 1}. @${m.name}`)
-        .join("\n");
-
-      const message =
-        `🟢 *ACTIVE MEMBERS (Typing/Recording)*\n\n` +
-        `📊 *${onlineMembers.length}* of *${participants.length}* members active\n\n` +
-        `${memberList}\n\n` +
-        `_Note: Only shows members currently typing or recording._`;
+      const mentions = onlineMembers.map(m => m.jid);
+      const memberList = onlineMembers.map((m, i) => `${i + 1}. @${m.number}`).join("\n");
 
       await react("✅");
-      await Gifted.sendMessage(
-        from,
-        {
-          text: message,
-          mentions: mentions,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
-    } catch (error) {
+      await Gifted.sendMessage(from, {
+        text:
+          `*Active Members*\n\n` +
+          `${onlineMembers.length} of ${participants.length} members active\n\n` +
+          `${memberList}`,
+        mentions,
+      }, { quoted: mek });
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to check online members: ${error.message}`);
+      return reply(`Failed to check online members: ${e.message}`);
     }
   },
 );
@@ -1327,76 +918,38 @@ gmd(
 gmd(
   {
     pattern: "resetlink",
-    aliases: [
-      "resetgclink",
-      "revoke",
-      "resetgrouplink",
-      "revokelink",
-      "newlink",
-    ],
+    aliases: ["resetgclink", "revoke", "resetgrouplink", "revokelink", "newlink"],
     react: "🔄",
     category: "group",
-    description: "Reset the group invite link and get a new one.",
+    description: "Reset the group invite link.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      mek,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, mek } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     try {
       await Gifted.groupRevokeInvite(from);
-
       const newInviteCode = await Gifted.groupInviteCode(from);
       const newLink = `https://chat.whatsapp.com/${newInviteCode}`;
-
       const groupMeta = await Gifted.groupMetadata(from);
-      const groupName = groupMeta.subject;
-      const totalMembers = groupMeta.participants.length;
-      const totalAdmins = groupMeta.participants.filter(
-        (p) => p.admin === "admin" || p.admin === "superadmin",
-      ).length;
-
-      const message =
-        `🔄 *GROUP LINK RESET*\n\n` +
-        `📛 *Group:* ${groupName}\n` +
-        `👥 *Total Members:* ${totalMembers}\n` +
-        `👑 *Total Admins:* ${totalAdmins}\n\n` +
-        `🔗 *New Link:*\n${newLink}\n\n` +
-        `_The old invite link has been revoked._`;
+      const adminCount = groupMeta.participants.filter(p => p.admin === "admin" || p.admin === "superadmin").length;
 
       await react("✅");
-      await Gifted.sendMessage(
-        from,
-        {
-          text: message,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
-    } catch (error) {
+      await Gifted.sendMessage(from, {
+        text:
+          `*Group Link Reset*\n\n` +
+          `*Group:* ${groupMeta.subject}\n` +
+          `*Total Members:* ${groupMeta.participants.length}\n` +
+          `*Total Admins:* ${adminCount}\n\n` +
+          `*New Link:*\n${newLink}\n\n` +
+          `Old invite link has been revoked.`,
+      }, { quoted: mek });
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to reset group link: ${error.message}`);
+      return reply(`Failed to reset group link: ${e.message}`);
     }
   },
 );
@@ -1410,43 +963,21 @@ gmd(
     description: "Bot leaves the group. Owner only.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isGroup,
-      isSuperUser,
-      mek,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, react, isGroup, isSuperUser, mek, botName } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isSuperUser) return reply("❌ Owner Only Command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isSuperUser) return reply("Owner Only Command!");
 
     try {
-      await Gifted.sendMessage(
-        from,
-        {
-          text: `👋 *Goodbye!*\n\n_${botName} is leaving this group..._`,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
+      await Gifted.sendMessage(from, {
+        text: `Goodbye! ${botName} is leaving this group...`,
+      }, { quoted: mek });
 
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 1000));
       await Gifted.groupLeave(from);
-    } catch (error) {
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to leave group: ${error.message}`);
+      return reply(`Failed to leave group: ${e.message}`);
     }
   },
 );
@@ -1454,40 +985,27 @@ gmd(
 gmd(
   {
     pattern: "listrequests",
-    aliases: ["joinrequests", "listjoinrequests", "pendingrequests"],
+    aliases: ["joinrequests", "requests", "pendingrequests"],
     react: "📋",
     category: "group",
-    description: "List all pending join requests in the group.",
+    description: "List all pending join requests.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      mek,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, mek } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
 
     try {
       const pendingRequests = await Gifted.groupRequestParticipantsList(from);
-
       if (!pendingRequests || pendingRequests.length === 0) {
         await react("📭");
-        return reply("📭 No pending join requests in this group.");
+        return reply("No pending join requests in this group.");
       }
 
       const resolvedJids = await Promise.all(
-        pendingRequests.map(async (r) => {
+        pendingRequests.map(async r => {
           let jid = r.jid;
           if (jid.endsWith("@lid")) {
             const cachedJid = getLidMapping(jid);
@@ -1501,46 +1019,24 @@ gmd(
             }
           }
           return jid;
-        }),
+        })
       );
 
-      const requestList = resolvedJids
-        .map((jid, i) => {
-          const number = jid.split("@")[0];
-          return `${i + 1}. @${number}`;
-        })
-        .join("\n");
-
-      const mentions = resolvedJids;
-
-      const message =
-        `📋 *PENDING JOIN REQUESTS*\n\n` +
-        `📊 Total: *${pendingRequests.length}* request(s)\n\n` +
-        `${requestList}\n\n` +
-        `_Use .accept <number> or .acceptall to approve_\n` +
-        `_Use .reject <number> or .rejectall to decline_`;
+      const requestList = resolvedJids.map((jid, i) => `${i + 1}. @${jid.split("@")[0]}`).join("\n");
 
       await react("✅");
-      await Gifted.sendMessage(
-        from,
-        {
-          text: message,
-          mentions: mentions,
-          contextInfo: {
-            forwardingScore: 5,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 0,
-            },
-          },
-        },
-        { quoted: mek },
-      );
-    } catch (error) {
+      await Gifted.sendMessage(from, {
+        text:
+          `*Pending Join Requests*\n\n` +
+          `Total: *${pendingRequests.length}* request(s)\n\n` +
+          `${requestList}\n\n` +
+          `Use .accept <number> or .acceptall to approve\n` +
+          `Use .reject <number> or .rejectall to decline`,
+        mentions: resolvedJids,
+      }, { quoted: mek });
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to list requests: ${error.message}`);
+      return reply(`Failed to list requests: ${e.message}`);
     }
   },
 );
@@ -1551,21 +1047,20 @@ gmd(
     aliases: ["groupstatus", "statusgroup", "togcstatus", "gs"],
     react: "📢",
     category: "group",
-    description: "Send text or quoted media to group status. Superuser only.",
+    description: "Send text or quoted media to group status.",
   },
   async (from, Gifted, conText) => {
     const { reply, react, isSuperUser, isGroup, q, quoted, quotedMsg, mek, formatAudio, formatVideo, botPrefix } = conText;
     const { downloadMediaMessage } = require("gifted-baileys");
 
-    if (!isGroup) return reply("❌ Group only command!");
-    if (!isSuperUser) return reply("❌ Owner Only Command!");
+    if (!isGroup) return reply("Group only command!");
+    if (!isSuperUser) return reply("Owner Only Command!");
 
     if (!q && !quotedMsg) {
       return reply(
-        `📌 *Usage:*\n` +
-          `• ${botPrefix}togroupstatus <text>\n` +
-          `• Reply to image/video/audio with ${botPrefix}togroupstatus <caption>\n` +
-          `• Or just ${botPrefix}togroupstatus to forward quoted media`,
+        `Usage:\n` +
+        `${botPrefix}togroupstatus <text>\n` +
+        `Reply to image/video/audio with ${botPrefix}togroupstatus`
       );
     }
 
@@ -1574,50 +1069,22 @@ gmd(
 
       if (quotedMsg) {
         if (quoted?.imageMessage) {
-          const caption = q || quoted.imageMessage.caption || "";
-          const buffer = await downloadMediaMessage(
-            { message: quotedMsg },
-            "buffer",
-            {},
-          );
-          statusPayload = { 
-            image: buffer,
-            mimetype: "image/jpeg"
-          };
-          if (caption) statusPayload.caption = caption;
+          const buffer = await downloadMediaMessage({ message: quotedMsg }, "buffer", {});
+          statusPayload = { image: buffer, mimetype: "image/jpeg" };
+          if (q) statusPayload.caption = q;
         } else if (quoted?.videoMessage) {
-          const caption = q || quoted.videoMessage.caption || "";
-          let buffer = await downloadMediaMessage(
-            { message: quotedMsg },
-            "buffer",
-            {},
-          );
+          let buffer = await downloadMediaMessage({ message: quotedMsg }, "buffer", {});
           buffer = await formatVideo(buffer);
-          statusPayload = { 
-            video: buffer,
-            mimetype: "video/mp4"
-          };
-          if (caption) statusPayload.caption = caption;
+          statusPayload = { video: buffer, mimetype: "video/mp4" };
+          if (q) statusPayload.caption = q;
         } else if (quoted?.audioMessage) {
-          let buffer = await downloadMediaMessage(
-            { message: quotedMsg },
-            "buffer",
-            {},
-          );
+          let buffer = await downloadMediaMessage({ message: quotedMsg }, "buffer", {});
           buffer = await formatAudio(buffer);
-          statusPayload = { 
-            audio: buffer,
-            mimetype: "audio/mp4",
-            ptt: true
-          };
+          statusPayload = { audio: buffer, mimetype: "audio/mp4", ptt: true };
         } else if (quoted?.conversation || quoted?.extendedTextMessage?.text) {
           statusPayload.text = quoted.conversation || quoted.extendedTextMessage.text;
         } else {
-          return reply("❌ Unsupported media type for group status.");
-        }
-
-        if (q && !statusPayload.caption && !statusPayload.text) {
-          statusPayload.caption = q;
+          return reply("Unsupported media type for group status.");
         }
       } else {
         statusPayload.text = q;
@@ -1625,10 +1092,10 @@ gmd(
 
       await Gifted.giftedStatus.sendGroupStatus(from, statusPayload);
       await react("✅");
-    } catch (error) {
-      console.error("togroupstatus error:", error);
+    } catch (e) {
+      console.error("togroupstatus error:", e);
       await react("❌");
-      return reply(`❌ Error sending group status: ${error.message}`);
+      return reply(`Error sending group status: ${e.message}`);
     }
   },
 );
@@ -1636,47 +1103,26 @@ gmd(
 gmd(
   {
     pattern: "groupname",
-    aliases: [
-      "gcname",
-      "setgcname",
-      "setgroupname",
-      "gcsubject",
-      "setgcsubject",
-    ],
+    aliases: ["gcname", "setgcname", "setgroupname", "gcsubject", "setgcsubject"],
     react: "✏️",
     category: "group",
-    description: "Change group name/subject. Usage: .groupname New Group Name",
+    description: "Change group name.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      q,
-      botPrefix,
-    } = conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, q, botPrefix } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
-
-    if (!q)
-      return reply(
-        `❌ Please provide a new group name.\n\n*Usage:* ${botPrefix}groupname New Group Name`,
-      );
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
+    if (!q) return reply(`Please provide a new group name.\nUsage: ${botPrefix}groupname New Name`);
 
     try {
       await Gifted.groupUpdateSubject(from, q);
       await react("✅");
-      return reply(`✅ Group name changed to: *${q}*`);
-    } catch (error) {
+      return reply(`Group name changed to: *${q}*`);
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to change group name: ${error.message}`);
+      return reply(`Failed to change group name: ${e.message}`);
     }
   },
 );
@@ -1684,47 +1130,26 @@ gmd(
 gmd(
   {
     pattern: "gcdesc",
-    aliases: [
-      "groupdesc",
-      "setgcdesc",
-      "setgroupdesc",
-      "description",
-      "setdescription",
-    ],
+    aliases: ["groupdesc", "setgcdesc", "setgroupdesc", "description", "setdescription"],
     react: "📝",
     category: "group",
-    description: "Change group description. Usage: .gcdesc New Description",
+    description: "Change group description.",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      sender,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      q,
-      botPrefix,
-    } = conText;
+    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, q, botPrefix } = conText;
 
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
-
-    if (!q)
-      return reply(
-        `❌ Please provide a new group description.\n\n*Usage:* ${botPrefix}gcdesc New Description Here`,
-      );
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isBotAdmin) return reply("Bot is not an admin in this group!");
+    if (!isAdmin && !isSuperAdmin) return reply("You must be an admin to use this command!");
+    if (!q) return reply(`Please provide a new description.\nUsage: ${botPrefix}gcdesc New Description`);
 
     try {
       await Gifted.groupUpdateDescription(from, q);
       await react("✅");
-      return reply(`✅ Group description updated successfully!`);
-    } catch (error) {
+      return reply(`Group description updated successfully!`);
+    } catch (e) {
       await react("❌");
-      return reply(`❌ Failed to change group description: ${error.message}`);
+      return reply(`Failed to change group description: ${e.message}`);
     }
   },
 );
@@ -1735,72 +1160,35 @@ gmd(
     react: "📢",
     aliases: ["tag", "all", "mention"],
     category: "group",
-    description: "Tag everyone in the group with custom message",
+    description: "Tag everyone in the group",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      isAdmin,
-      isSuperAdmin,
-      isGroup,
-      mek,
-      q,
-      participants,
-      sender,
-      botName,
-      newsletterJid,
-    } = conText;
+    const { reply, isAdmin, isSuperAdmin, isGroup, mek, q, participants, sender } = conText;
 
-    if (!isGroup) {
-      return reply("❌ This command can only be used in groups!");
-    }
-
+    if (!isGroup) return reply("This command can only be used in groups!");
     if (!isAdmin && !isSuperAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} Only group admins can use this command!`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
+      return await Gifted.sendMessage(from, {
+        text: `@${sender.split("@")[0]} Only group admins can use this command!`,
+        mentions: [sender],
+      }, { quoted: mek });
     }
 
-    const subject = q || "everyone";
-    const mentionedJids = participants
-      .map((p) => {
-        const jid =
-          typeof p === "string"
-            ? p
-            : p.id || p.jid || p.pn || p.phoneNumber || "";
-        if (!jid) return null;
-        return jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
-      })
-      .filter(Boolean);
+    const mentionedJids = participants.map(p => {
+      const jid = typeof p === "string" ? p : p.id || p.jid || p.pn || p.phoneNumber || "";
+      if (!jid) return null;
+      return jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
+    }).filter(Boolean);
 
     try {
-      await Gifted.sendMessage(
-        from,
-        {
-          text: `@${from}`,
-          contextInfo: {
-            mentionedJid: mentionedJids,
-            groupMentions: [
-              {
-                groupJid: from,
-                groupSubject: subject,
-              },
-            ],
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 143,
-            },
-          },
+      await Gifted.sendMessage(from, {
+        text: `@${from}`,
+        contextInfo: {
+          mentionedJid: mentionedJids,
+          groupMentions: [{ groupJid: from, groupSubject: q || "everyone" }],
         },
-        { quoted: mek },
-      );
-    } catch (error) {
-      console.error("Tag custom error:", error);
-      return reply(`❌ Failed to tag custom: ${error.message}`);
+      }, { quoted: mek });
+    } catch (e) {
+      return reply(`Failed to tag everyone: ${e.message}`);
     }
   },
 );
@@ -1814,213 +1202,37 @@ gmd(
     description: "Send a message that secretly tags everyone",
   },
   async (from, Gifted, conText) => {
-    const {
-      reply,
-      isAdmin,
-      isSuperAdmin,
-      isGroup,
-      mek,
-      q,
-      participants,
-      sender,
-      quotedMsg,
-      botName,
-      newsletterJid,
-      botPrefix,
-    } = conText;
+    const { reply, isAdmin, isSuperAdmin, isGroup, mek, q, participants, sender, quotedMsg, botPrefix } = conText;
 
-    if (!isGroup) {
-      return reply("❌ This command can only be used in groups!");
-    }
-
+    if (!isGroup) return reply("This command can only be used in groups!");
     if (!isAdmin && !isSuperAdmin) {
-      const userNumber = sender.split("@")[0];
-      return reply(`@${userNumber} Only group admins can use this command!`, {
-        mentions: [`${userNumber}@s.whatsapp.net`],
-      });
+      return await Gifted.sendMessage(from, {
+        text: `@${sender.split("@")[0]} Only group admins can use this command!`,
+        mentions: [sender],
+      }, { quoted: mek });
     }
 
     let text = q;
     if (!text && quotedMsg) {
-      text =
-        quotedMsg.conversation ||
-        quotedMsg.extendedTextMessage?.text ||
-        quotedMsg.imageMessage?.caption ||
-        quotedMsg.videoMessage?.caption ||
-        "";
+      text = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text ||
+             quotedMsg.imageMessage?.caption || quotedMsg.videoMessage?.caption || "";
     }
 
-    if (!text) {
-      return reply(
-        `❌ Please provide a message or reply to one.\n\n*Usage:* ${botPrefix}hidetag Your message here`,
-      );
-    }
+    if (!text) return reply(`Please provide a message or reply to one.\nUsage: ${botPrefix}hidetag Your message`);
 
-    const mentionedJids = participants
-      .map((p) => {
-        const jid =
-          typeof p === "string"
-            ? p
-            : p.id || p.jid || p.pn || p.phoneNumber || "";
-        if (!jid) return null;
-        return jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
-      })
-      .filter(Boolean);
+    const mentionedJids = participants.map(p => {
+      const jid = typeof p === "string" ? p : p.id || p.jid || p.pn || p.phoneNumber || "";
+      if (!jid) return null;
+      return jid.includes("@") ? jid : `${jid}@s.whatsapp.net`;
+    }).filter(Boolean);
 
     try {
-      await Gifted.sendMessage(
-        from,
-        {
-          text: text,
-          contextInfo: {
-            mentionedJid: mentionedJids,
-            forwardingScore: 1,
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: {
-              newsletterJid: newsletterJid,
-              newsletterName: botName,
-              serverMessageId: 143,
-            },
-          },
-        },
-        { quoted: mek },
-      );
-    } catch (error) {
-      console.error("Hidetag error:", error);
-      return reply(`❌ Failed to send hidden tag: ${error.message}`);
-    }
-  },
-);
-
-gmd(
-  {
-    pattern: "antigroupmention",
-    aliases: [
-      "antigcmention",
-      "agm",
-      "antimentiongroup",
-      "antigcstatusmention",
-      "antistatusmention",
-    ],
-    react: "🛡️",
-    category: "group",
-    description:
-      "Toggle anti-group-mention protection. Modes: on/warn (default), kick, off",
-  },
-  async (from, Gifted, conText) => {
-    const {
-      reply,
-      react,
-      isGroup,
-      isBotAdmin,
-      isAdmin,
-      isSuperAdmin,
-      q,
-      mek,
-      botName,
-      botPrefix,
-    } = conText;
-
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
-
-    try {
-      const currentSetting = await getGroupSetting(from, "ANTIGROUPMENTION");
-      const arg = q?.toLowerCase()?.trim();
-
-      if (!arg) {
-        const status =
-          currentSetting === "false" || currentSetting === "off"
-            ? "OFF"
-            : `ON (${currentSetting})`;
-        return reply(
-          `🛡️ *Anti-Group-Mention Status*\n\nCurrent: *${status}*\n\n*Usage:*\n• ${botPrefix}antigroupmention on - Enable with warnings\n• ${botPrefix}antigroupmention warn - Enable with warnings\n• ${botPrefix}antigroupmention delete - Delete message only\n• ${botPrefix}antigroupmention kick - Kick immediately\n• ${botPrefix}antigroupmention off - Disable`,
-        );
-      }
-
-      let newValue;
-      let message;
-
-      if (arg === "on" || arg === "true" || arg === "warn") {
-        newValue = "warn";
-        message = `✅ Anti-Group-Mention *ENABLED* with warnings!\n\nUsers who mention this group in their status will be warned and kicked after reaching the warn limit.`;
-      } else if (arg === "delete") {
-        newValue = "delete";
-        message = `✅ Anti-Group-Mention *ENABLED* with delete!\n\nMessages mentioning this group in status will be deleted with a warning. No kick action.`;
-      } else if (arg === "kick") {
-        newValue = "kick";
-        message = `✅ Anti-Group-Mention *ENABLED* with immediate kick!\n\nUsers who mention this group in their status will be kicked immediately.`;
-      } else if (arg === "off" || arg === "false") {
-        newValue = "false";
-        message = `❌ Anti-Group-Mention *DISABLED*!`;
-      } else {
-        return reply(`❌ Invalid option. Use: on, warn, delete, kick, or off`);
-      }
-
-      await setGroupSetting(from, "ANTIGROUPMENTION", newValue);
-      await react("✅");
-      return reply(message);
-    } catch (error) {
-      await react("❌");
-      return reply(`❌ Failed to update setting: ${error.message}`);
-    }
-  },
-);
-
-gmd(
-  {
-    pattern: "setantigcmentionwarnlimit",
-    aliases: [
-      "antigcmentionwarnlimit",
-      "agmwarn",
-      "setantigroupmentionwarn",
-      "antigroupmentionwarnlimit",
-      "antigcwarnlimit2",
-    ],
-    react: "⚙️",
-    category: "group",
-    description: "Set the warning limit for anti-group-mention before kicking",
-  },
-  async (from, Gifted, conText) => {
-    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, q, mek, botPrefix } =
-      conText;
-
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin)
-      return reply("❌ You must be an admin to use this command!");
-
-    try {
-      const currentLimit = await getGroupSetting(
-        from,
-        "ANTIGROUPMENTION_WARN_COUNT",
-      );
-
-      if (!q || !q.trim()) {
-        return reply(
-          `⚙️ *Anti-Group-Mention Warn Limit*\n\nCurrent: *${currentLimit || 3}* warnings\n\n*Usage:* ${botPrefix}setantigcmentionwarnlimit <number>\n*Example:* ${botPrefix}setantigcmentionwarnlimit 5`,
-        );
-      }
-
-      const newLimit = parseInt(q.trim());
-      if (isNaN(newLimit) || newLimit < 1 || newLimit > 50) {
-        return reply(`❌ Please provide a valid number between 1 and 50`);
-      }
-
-      await setGroupSetting(
-        from,
-        "ANTIGROUPMENTION_WARN_COUNT",
-        String(newLimit),
-      );
-      await react("✅");
-      return reply(
-        `✅ Anti-Group-Mention warn limit set to *${newLimit}*!\n\nUsers will be kicked after ${newLimit} warnings.`,
-      );
-    } catch (error) {
-      await react("❌");
-      return reply(`❌ Failed to update warn limit: ${error.message}`);
+      await Gifted.sendMessage(from, {
+        text,
+        contextInfo: { mentionedJid: mentionedJids },
+      }, { quoted: mek });
+    } catch (e) {
+      return reply(`Failed to send hidden tag: ${e.message}`);
     }
   },
 );
@@ -2031,70 +1243,37 @@ gmd(
     react: "📢",
     aliases: ["mentionall"],
     category: "group",
-    description: "Tag all group members with optional message",
+    description: "Tag all group members",
   },
   async (from, Gifted, conText) => {
     const { reply, react, isAdmin, isSuperAdmin, isGroup, isSuperUser, mek, sender, q, botName } = conText;
 
-    if (!isGroup) {
-      return reply("❌ This command only works in groups!");
-    }
-
-    if (!isAdmin && !isSuperAdmin && !isSuperUser) {
-      return reply("❌ Admin/Owner Only Command!");
-    }
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isAdmin && !isSuperAdmin && !isSuperUser) return reply("Admin/Owner Only Command!");
 
     try {
       const meta = await Gifted.groupMetadata(from);
       const participants = meta.participants;
 
-      const superAdmins = [];
-      const admins = [];
-      const members = [];
-
-      for (let p of participants) {
-        if (p.admin === "superadmin") {
-          superAdmins.push(p.id);
-        } else if (p.admin === "admin") {
-          admins.push(p.id);
-        } else {
-          members.push(p.id);
-        }
-      }
+      const superAdmins = participants.filter(p => p.admin === "superadmin").map(p => p.id);
+      const admins = participants.filter(p => p.admin === "admin").map(p => p.id);
+      const members = participants.filter(p => !p.admin).map(p => p.id);
 
       const sortedParticipants = [...superAdmins, ...admins, ...members];
-      let mentions = sortedParticipants;
+      const mentions = [...sortedParticipants, sender];
 
-      let text = `*${botName} TAGALL*\n\n`;
-      
-      if (q && q.trim()) {
-        text += `*Message:* ${q.trim()}\n\n`;
-      }
-      
-      text += `*Tagged By:* @${sender.split('@')[0]}\n\n`;
-      text += `*Tagged Members:*\n`;
+      let text = `*${botName} Tagall*\n\n`;
+      if (q && q.trim()) text += `*Message:* ${q.trim()}\n\n`;
+      text += `*Tagged By:* @${sender.split("@")[0]}\n\n*Members:*\n`;
 
-      for (let id of superAdmins) {
-        text += `👑 @${id.split('@')[0]}\n`;
-      }
-      for (let id of admins) {
-        text += `👮 @${id.split('@')[0]}\n`;
-      }
-      for (let id of members) {
-        text += `👤 @${id.split('@')[0]}\n`;
-      }
+      for (const id of superAdmins) text += `👑 @${id.split("@")[0]}\n`;
+      for (const id of admins) text += `👮 @${id.split("@")[0]}\n`;
+      for (const id of members) text += `👤 @${id.split("@")[0]}\n`;
 
-      mentions.push(sender);
-
-      await Gifted.sendMessage(from, {
-        text: text.trim(),
-        mentions
-      }, { quoted: mek });
-
+      await Gifted.sendMessage(from, { text: text.trim(), mentions }, { quoted: mek });
       await react("✅");
-    } catch (error) {
-      console.error("Tagall error:", error);
-      return reply(`❌ Failed to tag all: ${error.message}`);
+    } catch (e) {
+      return reply(`Failed to tag all: ${e.message}`);
     }
   },
 );
@@ -2105,133 +1284,36 @@ gmd(
     react: "👮",
     aliases: ["taggcadmins", "taggroupadmins"],
     category: "group",
-    description: "Tag all group admins with optional message",
+    description: "Tag all group admins",
   },
   async (from, Gifted, conText) => {
     const { reply, react, isAdmin, isSuperAdmin, isGroup, isSuperUser, mek, sender, q, botName } = conText;
 
-    if (!isGroup) {
-      return reply("❌ This command only works in groups!");
-    }
-
-    if (!isAdmin && !isSuperAdmin && !isSuperUser) {
-      return reply("❌ Admin/Owner Only Command!");
-    }
+    if (!isGroup) return reply("This command only works in groups!");
+    if (!isAdmin && !isSuperAdmin && !isSuperUser) return reply("Admin/Owner Only Command!");
 
     try {
       const meta = await Gifted.groupMetadata(from);
       const participants = meta.participants;
 
-      const superAdmins = [];
-      const admins = [];
-
-      for (let p of participants) {
-        if (p.admin === "superadmin") {
-          superAdmins.push(p.id);
-        } else if (p.admin === "admin") {
-          admins.push(p.id);
-        }
-      }
-
+      const superAdmins = participants.filter(p => p.admin === "superadmin").map(p => p.id);
+      const admins = participants.filter(p => p.admin === "admin").map(p => p.id);
       const allAdmins = [...superAdmins, ...admins];
-      
-      if (allAdmins.length === 0) {
-        return reply("❌ No admins found in this group!");
-      }
 
-      let mentions = [...allAdmins, sender];
+      if (allAdmins.length === 0) return reply("No admins found in this group!");
 
-      let text = `*${botName} TAG ADMINS*\n\n`;
-      
-      if (q && q.trim()) {
-        text += `*Message:* ${q.trim()}\n\n`;
-      }
-      
-      text += `*Tagged By:* @${sender.split('@')[0]}\n\n`;
-      text += `*Tagged Admins:*\n`;
+      const mentions = [...allAdmins, sender];
+      let text = `*${botName} Tag Admins*\n\n`;
+      if (q && q.trim()) text += `*Message:* ${q.trim()}\n\n`;
+      text += `*Tagged By:* @${sender.split("@")[0]}\n\n*Admins:*\n`;
 
-      for (let id of superAdmins) {
-        text += `👑 @${id.split('@')[0]}\n`;
-      }
-      for (let id of admins) {
-        text += `👮 @${id.split('@')[0]}\n`;
-      }
+      for (const id of superAdmins) text += `👑 @${id.split("@")[0]}\n`;
+      for (const id of admins) text += `👮 @${id.split("@")[0]}\n`;
 
-      await Gifted.sendMessage(from, {
-        text: text.trim(),
-        mentions
-      }, { quoted: mek });
-
+      await Gifted.sendMessage(from, { text: text.trim(), mentions }, { quoted: mek });
       await react("✅");
-    } catch (error) {
-      console.error("Tagadmins error:", error);
-      return reply(`❌ Failed to tag admins: ${error.message}`);
+    } catch (e) {
+      return reply(`Failed to tag admins: ${e.message}`);
     }
-  },
-);
-
-gmd(
-  {
-    pattern: "antipromote",
-    react: "🛡️",
-    category: "group",
-    description: "Toggle anti-promote protection. Demotes both promoter and promoted user.",
-  },
-  async (from, Gifted, conText) => {
-    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, args, botPrefix } = conText;
-
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin) return reply("❌ You must be an admin to use this command!");
-
-    const action = args[0]?.toLowerCase();
-    const rawCurrent = await getGroupSetting(from, "ANTIPROMOTE");
-    const current = rawCurrent === "true" ? "true" : "false";
-    
-    if (!action || !["on", "off"].includes(action)) {
-      return reply(`🛡️ *Anti-Promote Protection*\n\nCurrent: ${current === "true" ? "ON ✅" : "OFF ❌"}\n\n*Usage:*\n${botPrefix}antipromote on - Enable\n${botPrefix}antipromote off - Disable\n\n_When enabled, if someone promotes another user, both will be demoted._`);
-    }
-
-    const value = action === "on" ? "true" : "false";
-    if (current === value) {
-      return reply(`⚠️ Anti-Promote is already ${action === "on" ? "ON" : "OFF"}!`);
-    }
-    
-    await setGroupSetting(from, "ANTIPROMOTE", value);
-    await react("✅");
-    return reply(`✅ Anti-Promote is now ${action === "on" ? "ON" : "OFF"} for this group.`);
-  },
-);
-
-gmd(
-  {
-    pattern: "antidemote",
-    react: "🛡️",
-    category: "group",
-    description: "Toggle anti-demote protection. Demotes demoter and re-promotes demoted user.",
-  },
-  async (from, Gifted, conText) => {
-    const { reply, react, isGroup, isBotAdmin, isAdmin, isSuperAdmin, args, botPrefix } = conText;
-
-    if (!isGroup) return reply("❌ This command only works in groups!");
-    if (!isBotAdmin) return reply("❌ Bot is not an admin in this group!");
-    if (!isAdmin && !isSuperAdmin) return reply("❌ You must be an admin to use this command!");
-
-    const action = args[0]?.toLowerCase();
-    const rawCurrent = await getGroupSetting(from, "ANTIDEMOTE");
-    const current = rawCurrent === "true" ? "true" : "false";
-    
-    if (!action || !["on", "off"].includes(action)) {
-      return reply(`🛡️ *Anti-Demote Protection*\n\nCurrent: ${current === "true" ? "ON ✅" : "OFF ❌"}\n\n*Usage:*\n${botPrefix}antidemote on - Enable\n${botPrefix}antidemote off - Disable\n\n_When enabled, if someone demotes an admin, the demoter gets demoted and the demoted user is re-promoted._`);
-    }
-
-    const value = action === "on" ? "true" : "false";
-    if (current === value) {
-      return reply(`⚠️ Anti-Demote is already ${action === "on" ? "ON" : "OFF"}!`);
-    }
-    
-    await setGroupSetting(from, "ANTIDEMOTE", value);
-    await react("✅");
-    return reply(`✅ Anti-Demote is now ${action === "on" ? "ON" : "OFF"} for this group.`);
   },
 );
