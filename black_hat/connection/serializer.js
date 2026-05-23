@@ -123,7 +123,8 @@ const serializeMessage = async (ms, Gifted, settings = {}) => {
     // PREFIX SYSTEM (FIXED)
     // =========================
 
-    const botPrefix = settings.PREFIX ?? config?.PREFIX ?? '.'; 
+    const rawPrefix = settings.PREFIX ?? config?.PREFIX ?? '.';
+    const botPrefix = (rawPrefix === 'null' || rawPrefix === '') ? null : rawPrefix;
     // null | "." | "^[.,!,?,-]"
 
     let isCommand = false;
