@@ -30,46 +30,87 @@ const SettingsDB = DATABASE.define(
 );
 
 const DEFAULT_SETTINGS = {
-    PREFIX: ".",
-    OWNER_NAME: "𝑨𝒏𝒐𝒏𝒚𝒎𝒐𝒖𝒔 𝒖𝒔𝒆𝒓🥷",
-    OWNER_NUMBER: "255794469700",
-    BOT_NAME: "𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃",
-    FOOTER: "ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝑨𝒏𝒐𝒏𝒚𝒎𝒐𝒖𝒔 𝒖𝒔𝒆𝒓🥷",
-    CAPTION: "©𝟐𝟎𝟐𝟓 𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃 𝐕𝟓",
-    BOT_PIC: "https://www.image2url.com/r2/default/images/1776338825845-caa56d77-b8dd-46d7-8380-753c6519a578.jpg",
-    VERSION: packageJson.version || "5.0.0",
+    PREFIX: config.PREFIX || ".",
+
+    OWNER_NAME: config.OWNER_NAME || "ᬊ͜͡𝐀ɭīī 𝐈𝐍𝅦𝐗īī𝐃𝐄 ꫂ⃟🇺🇸",
+    OWNER_NUMBER: config.OWNER_NUMBER || "923147725823",
+
+    BOT_NAME: config.BOT_NAME || "𝐀ɭīī-𝐌𝐃",
+
+    FOOTER: config.FOOTER || "ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝑨𝒏𝒐𝒏𝒚𝒎𝒐𝒖𝒔 𝒖𝒔𝒆𝒓🥷",
+    CAPTION: config.CAPTION || "©2025 𝐀ɭīī-𝐌𝐃",
+
+    BOT_PIC: config.BOT_PIC || "https://files.catbox.moe/m8t72a.jpg",
+
+    VERSION: packageJson?.version ?? "10.0.0",
+
     MODE: config.MODE || "public",
-    WARN_COUNT: "3",
-    TIME_ZONE: config.TIME_ZONE || "Africa/Nairobi",
-    DM_PRESENCE: "online",
-    GC_PRESENCE: "online",
-    CHATBOT: "false",
-    CHATBOT_MODE: "inbox",
-    STARTING_MESSAGE: "true",
-    ANTIDELETE: "indm",
-    ANTI_EDIT: "indm",
-    ANTICALL: "false",
-    ANTICALL_MSG: "*_📞 Auto Call Reject Mode Active. 📵 No Calls Allowed!_*",
+
+    WARN_COUNT: config.WARN_COUNT || "3",
+
+    TIME_ZONE: config.TIME_ZONE || "Asia/Karachi",
+
+    DM_PRESENCE: config.DM_PRESENCE || "offline",
+    GC_PRESENCE: config.GC_PRESENCE || "offline",
+
+    CHATBOT: config.CHATBOT || "false",
+    CHATBOT_MODE: config.CHATBOT_MODE || "inbox",
+
+    STARTING_MESSAGE: config.STARTING_MESSAGE || "true",
+
+    ANTIDELETE: config.ANTIDELETE || "indm",
+    ANTI_EDIT: config.ANTI_EDIT || "indm",
+
+    ANTICALL: config.ANTICALL || "false",
+    ANTICALL_MSG:
+        config.ANTICALL_MSG ||
+        "*_📞 Auto Call Reject Mode Active. 📵 No Calls Allowed!_*",
+
     AUTO_LIKE_STATUS: config.AUTO_LIKE_STATUS || "true",
     AUTO_READ_STATUS: config.AUTO_READ_STATUS || "true",
-    STATUS_LIKE_EMOJIS: "💛,❤️,💜,🤍,💙",
-    AUTO_REPLY_STATUS: "false",
-    STATUS_REPLY_TEXT: "*ʏᴏᴜʀ sᴛᴀᴛᴜs ᴠɪᴇᴡᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅*",
-    AUTO_REACT: "off",
-    AUTO_REPLY: "false",
-    AUTO_READ_MESSAGES: "off",
-    AUTO_BIO: "false",
-    AUTO_BLOCK: "",
-    YT: "youtube.com/@Clever_Tech_Nexus",
-    NEWSLETTER_JID: "120363422524788798@newsletter",
-    GC_JID: "FHT9hXCbu1z4XiPbn7HKMw",
-    NEWSLETTER_URL: "https://whatsapp.com/channel/0029Vb73SRl1CYoLWtyr4u1X",
-    BOT_REPO: "clevertechnexus2/black-hat-md",
-    PACK_NAME: "𝐁𝐋𝐀𝐂𝐊 𝐇𝐀𝐓-𝐌𝐃",
-    PACK_AUTHOR: "𝑨𝒏𝒐𝒏𝒚𝒎𝒐𝒖𝒔 𝒖𝒔𝒆𝒓🥷",
-    SUDO_NUMBERS: "",
-    PM_PERMIT: "false",
-    ANTIVIEWONCE: "indm",
+
+    STATUS_LIKE_EMOJIS:
+        config.STATUS_LIKE_EMOJIS || "💛,❤️,💜,🤍,💙",
+
+    AUTO_REPLY_STATUS: config.AUTO_REPLY_STATUS || "false",
+
+    STATUS_REPLY_TEXT:
+        config.STATUS_REPLY_TEXT ||
+        "*ʏᴏᴜʀ sᴛᴀᴛᴜs ᴠɪᴇᴡᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ ✅*",
+
+    AUTO_REACT: config.AUTO_REACT || "off",
+    AUTO_REPLY: config.AUTO_REPLY || "false",
+    AUTO_READ_MESSAGES: config.AUTO_READ_MESSAGES || "off",
+
+    AUTO_BIO: config.AUTO_BIO || "false",
+
+    AUTO_BLOCK: config.AUTO_BLOCK || "",
+
+    YT: config.YT || "youtube.com/@ali-inxide",
+
+    NEWSLETTER_JID:
+        config.NEWSLETTER_JID ||
+        "120363422524788798@newsletter",
+
+    GC_JID: config.GC_JID || "Hw5Am0eSXMZDubYHLzO4JZ",
+
+    NEWSLETTER_URL:
+        config.NEWSLETTER_URL ||
+        "https://whatsapp.com/channel/0029VaoRxGmJpe8lgCqT1T2h",
+
+    BOT_REPO: config.BOT_REPO || "ALI-INXIDE/ALI-MD",
+
+    PACK_NAME: config.PACK_NAME || "",
+
+    PACK_AUTHOR:
+        config.PACK_AUTHOR ||
+        "ᬊ͜͡𝐀ɭīī-𝐌𝐃 𝐁𝚯𝐓 ꫂ⃟🇦🇱",
+
+    SUDO_NUMBERS: config.SUDO_NUMBERS || "",
+
+    PM_PERMIT: config.PM_PERMIT || "false",
+
+    ANTIVIEWONCE: config.ANTIVIEWONCE || "indm",
 };
 
 let initialized = false;
