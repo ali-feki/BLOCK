@@ -135,125 +135,135 @@ gmd(
 );
 
 gmd(
-{
+  {
     pattern: "setprefix",
     aliases: ["prefix", "botprefix", "changeprefix"],
     react: "⚙️",
     category: "owner",
     description: "Set bot prefix",
-},
-async (from, Gifted, conText) => {
+  },
+  async (from, Gifted, conText) => {
 
     const { q, reply, react, isSuperUser } = conText;
 
+    // ── OWNER CHECK ──────────────────────────────────────────────────────────
     if (!isSuperUser) {
-        return reply("❌ Owner Only Command!");
+      return reply("❌ Owner Only Command!");
+    }
+
+    // ── INPUT CHECK ──────────────────────────────────────────────────────────
+    if (!q) {
+      return reply(
+        "❌ Please provide a prefix!\n\n" +
+        "Examples:\n" +
+        ".setprefix !\n" +
+        ".setprefix .,!,#\n" +
+        ".setprefix 💀\n" +
+        ".setprefix null"
+      );
     }
 
     try {
 
-        const input = (q || "").trim();
+      const input = q.trim();
 
-        if (!input) {
-            return reply(
-`❌ Please provide a prefix!
+      // ── NULL PREFIX SUPPORT ───────────────────────────────────────────────
+      let newPrefix;
 
-📌 Examples:
-.setprefix !
-.setprefix a
-.setprefix 6
-.setprefix 💀
-.setprefix . ! #
-.setprefix null`
-            );
-        }
+      if (
+        input.toLowerCase() === "null" ||
+        input.toLowerCase() === "false" ||
+        input.toLowerCase() === "off"
+      ) {
 
-        // NULL PREFIX MODE
-        if (input.toLowerCase() === "null" || input.toLowerCase() === "noprefix") {
-            await setSetting("PREFIX", null);
-            await react("✅");
-            return reply("✅ Prefix set to: NULL (No Prefix Mode)");
-        }
+        newPrefix = null;
 
-        // SPLIT INPUT
-        let prefixes = input
-            .split(/\s+/)
+      } else {
+
+        // ── MULTIPLE PREFIX SUPPORT ────────────────────────────────────────
+        const prefixes = [...new Set(
+          input
+            .split(',')
             .map(p => p.trim())
-            .filter(Boolean);
+            .filter(Boolean)
+        )];
 
-        // REMOVE DUPLICATES
-        prefixes = [...new Set(prefixes)];
-
-        // VALIDATION
-        const invalid = [];
-
-        for (const p of prefixes) {
-
-            if (!p) {
-                invalid.push("(empty)");
-                continue;
-            }
-
-            if (p.length > 5) {
-                invalid.push(`${p} (max 5 chars)`);
-                continue;
-            }
-
-            if (/\s/.test(p)) {
-                invalid.push(`${p} (no spaces allowed)`);
-                continue;
-            }
+        // ── VALIDATION ─────────────────────────────────────────────────────
+        if (prefixes.length === 0) {
+          return reply("❌ Invalid prefix provided!");
         }
 
-        if (invalid.length > 0) {
-            return reply(
-`❌ Invalid Prefix Found:
-
-${invalid.map(v => `• ${v}`).join("\n")}
-
-✅ Allowed:
-• a
-• 6
-• !
-• 💀
-• . ! #`
-            );
+        // LIMIT PREFIX COUNT
+        if (prefixes.length > 10) {
+          return reply("❌ Maximum 10 prefixes allowed!");
         }
 
-        // FINAL FORMAT
-        const finalPrefix =
-            prefixes.length === 1
-                ? prefixes[0]
-                : prefixes;
+        // LIMIT PREFIX SIZE
+        const invalid = prefixes.find(p => p.length > 5);
 
-        const current = await getSetting("PREFIX");
-
-        if (JSON.stringify(current) === JSON.stringify(finalPrefix)) {
-            return reply("⚠️ Prefix already set!");
+        if (invalid) {
+          return reply(
+            `❌ Invalid prefix: *${invalid}*\n` +
+            `Prefix length cannot exceed 5 characters.`
+          );
         }
 
-        await setSetting("PREFIX", finalPrefix);
+        newPrefix = prefixes.join(',');
+      }
 
-        await react("✅");
+      // ── CURRENT PREFIX ────────────────────────────────────────────────────
+      const current = await getSetting("PREFIX");
 
-        return reply(
-`✅ Prefix Updated Successfully!
+      const currentString =
+        current === null ? "null" : String(current);
 
-📌 New Prefix:
-${Array.isArray(finalPrefix)
-? finalPrefix.join(" , ")
-: finalPrefix}
+      const newString =
+        newPrefix === null ? "null" : String(newPrefix);
 
-📊 Mode:
-${Array.isArray(finalPrefix)
-? "Multiple Prefix Mode"
-: "Single Prefix Mode"}`
-        );
+      // SAME PREFIX CHECK
+      if (currentString === newString) {
+        return reply(`⚠️ Prefix is already set to: *${newString}*`);
+      }
+
+      // ── SAVE PREFIX ───────────────────────────────────────────────────────
+      await setSetting("PREFIX", newPrefix);
+
+      await react("✅");
+
+      // ── DEBUG LOG ────────────────────────────────────────────────────────
+      console.log("╭──────────────────────────────╮");
+      console.log("│ ⚙️ PREFIX UPDATED            │");
+      console.log("╰──────────────────────────────╯");
+
+      console.log("👤 Updated By:", from);
+      console.log("📌 Old Prefix:", currentString);
+      console.log("🆕 New Prefix:", newString);
+
+      if (newPrefix === null) {
+        console.log("⚡ MODE: NULL PREFIX");
+      } else {
+        console.log("📚 PREFIX LIST:", newString.split(','));
+      }
+
+      console.log("════════════════════════════════════════");
+
+      // ── SUCCESS MESSAGE ──────────────────────────────────────────────────
+      return reply(
+        `✅ Prefix Updated Successfully!\n\n` +
+        `⚙️ Mode: ${newPrefix === null ? "NULL PREFIX" : "PREFIX MODE"}\n` +
+        `📌 New Prefix: *${newString}*`
+      );
 
     } catch (error) {
-        return reply(`❌ Error: ${error.message}`);
+
+      console.error("❌ SETPREFIX ERROR:", error);
+
+      return reply(
+        `❌ Error while updating prefix!\n\n` +
+        `🧩 ${error.message}`
+      );
     }
-},
+  },
 );
 
 gmd(
