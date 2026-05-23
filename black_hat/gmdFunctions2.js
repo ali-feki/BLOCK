@@ -833,6 +833,133 @@ const processMediaMessage = async (deletedMessage) => {
     }
 };
 
+const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
+    try {
+        const settings = await getAllSettings();
+        const antiEdit = settings.ANTI_EDIT || 'indm';
+        if (antiEdit === 'false' || antiEdit === 'off') return;
+
+        const { key, update } = updateData;
+        if (!key || !update?.message) return;
+        if (key.fromMe) return;
+        if (key.remoteJid === 'status@broadcast') return;
+
+        const rawChatJid = key.remoteJid;
+        const msgId = key.id;
+
+        const resolvedChatJid = await _resolveLid(Gifted, rawChatJid);
+        const isGroup = resolvedChatJid?.endsWith('@g.us') || rawChatJid?.endsWith('@g.us');
+
+        const editedMsg = update.message;
+        const newContent = _extractEditContent(editedMsg);
+        if (!newContent) return;
+
+        const MEDIA_TYPES = ['imageMessage', 'videoMessage', 'documentMessage'];
+
+        let originalContent = 'N/A';
+        let originalPushName = null;
+        let originalMediaObj = null;
+        let origMsgType = null;
+        let origMsgData = null;
+        let cachedSender = null;
+
+        if (findOriginal) {
+            const orig = findOriginal(rawChatJid, msgId);
+            if (orig?.message) {
+                origMsgType = Object.keys(orig.message)[0];
+                origMsgData = orig.message[origMsgType];
+                originalContent = _extractEditContent(orig.message) || 'N/A';
+                if (MEDIA_TYPES.includes(origMsgType)) originalMediaObj = orig;
+            }
+            if (orig?.originalPushName) originalPushName = orig.originalPushName;
+            if (orig?.originalSender && !orig.originalSender.endsWith('@lid')) {
+                cachedSender = orig.originalSender;
+            }
+        }
+
+        let sender = cachedSender
+            || (key.participantPn && !key.participantPn.endsWith('@lid') ? key.participantPn : null)
+            || key.participant
+            || (isGroup ? null : resolvedChatJid);
+        sender = await _resolveLid(Gifted, sender);
+        const senderNum = sender && !sender.endsWith('@lid')
+            ? sender.split('@')[0]
+            : resolvedChatJid?.split('@')[0] || 'Unknown';
+
+        const botFooter = settings.FOOTER || '';
+        const timeZone = settings.TIME_ZONE || 'Asia/Karachi';
+
+        let chatLabel = isGroup ? resolvedChatJid : 'DM';
+        if (isGroup) {
+            try { const meta = await getGroupMetadata(Gifted, resolvedChatJid); chatLabel = meta?.subject || resolvedChatJid; } catch (e) {}
+        }
+
+        const currentTime = formatTime(Date.now(), timeZone);
+        const currentDate = formatDate(Date.now(), timeZone);
+        const mentions = sender && !sender.endsWith('@lid') ? [sender] : [];
+
+        const origCaption = originalMediaObj ? (_extractRawCaption(originalMediaObj.message) || '(no caption)') : originalContent;
+        const newCaption = _extractRawCaption(update.message) || newContent;
+
+        const alertText = `*✏️ ANTI-EDIT MESSAGE SYSTEM*\n\n` +
+            `*👤 Edited By:* @${senderNum}\n` +
+            `*🕑 Time:* ${currentTime}\n` +
+            `*📆 Date:* ${currentDate}\n` +
+            `*💬 Chat:* ${chatLabel}\n\n` +
+            `*📄 Original ${originalMediaObj ? 'Caption' : 'Message'}:* ${origCaption}\n` +
+            `*📝 Edited To:* ${newCaption}`;
+
+        const sendAlert = async (targetJid) => {
+            if (!targetJid) return;
+            if (originalMediaObj) {
+                try {
+                    const buffer = await downloadMediaMessage(originalMediaObj, 'buffer', {});
+                    if (origMsgType === 'imageMessage') {
+                        await Gifted.sendMessage(targetJid, { image: buffer, caption: alertText, mentions });
+                    } else if (origMsgType === 'videoMessage') {
+                        await Gifted.sendMessage(targetJid, { video: buffer, caption: alertText, mentions });
+                    } else if (origMsgType === 'documentMessage') {
+                        await Gifted.sendMessage(targetJid, {
+                            document: buffer,
+                            fileName: origMsgData?.fileName || 'document',
+                            mimetype: origMsgData?.mimetype || 'application/octet-stream',
+                            caption: alertText,
+                            mentions,
+                        });
+                    } else {
+                        await Gifted.sendMessage(targetJid, { text: alertText, mentions });
+                    }
+                    return;
+                } catch (mediaErr) {
+                    console.error('[ANTI-EDIT] media forward failed:', mediaErr.message);
+                }
+            }
+            await Gifted.sendMessage(targetJid, { text: alertText, mentions });
+        };
+
+        const sendJid = resolvedChatJid && !resolvedChatJid.endsWith('@lid') ? resolvedChatJid : rawChatJid;
+        const dmTarget = Gifted.user?.id ? `${Gifted.user.id.split(':')[0]}@s.whatsapp.net` : null;
+
+        // ── NEW: target logic ─────────────────────────────────────────────────
+        if (antiEdit === 'indm' || antiEdit === 'pm') {
+            if (dmTarget) await sendAlert(dmTarget);
+        } else if (antiEdit === 'inchat') {
+            if (sendJid) await sendAlert(sendJid);
+        } else if (antiEdit === 'on' || antiEdit === 'chats') {
+            // both
+            if (dmTarget) try { await sendAlert(dmTarget); } catch (e) {}
+            if (sendJid) try { await sendAlert(sendJid); } catch (e) {}
+        } else if (antiEdit.endsWith('@s.whatsapp.net') || antiEdit.endsWith('@g.us')) {
+            // specific jid
+            await sendAlert(antiEdit);
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
+    } catch (err) {
+        console.error('Anti-edit error:', err.message);
+    }
+};
+
 const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwnerJid, deleterPushName, senderPushName) => {
     const settings = await getAllSettings();
     const botFooter = settings.FOOTER || '';
@@ -916,144 +1043,77 @@ const GiftedAntiDelete = async (Gifted, deletedMsg, key, deleter, sender, botOwn
         mentionedJid: mentionedJids.filter(j => j !== null)
     });
 
+    // ── build alert text helper ───────────────────────────────────────────────
+    const buildTextAlert = (prefix = '') => {
+        return `${prefix}*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n*👤 Sent By:* ${finalSenderDisplay}\n*👤 Deleted By:* ${finalDeleterDisplay}\n${chatInfo}`;
+    };
+
+    const sendToTarget = async (targetJid) => {
+        if (!targetJid) return;
+        try {
+            if (deletedMsg.message?.conversation || deletedMsg.message?.extendedTextMessage?.text) {
+                const text = deletedMsg.message.conversation || deletedMsg.message.extendedTextMessage.text;
+                await Gifted.sendMessage(targetJid, {
+                    text: `${buildTextAlert()}\n\n*Deleted Msg:*\n${text}`,
+                    mentions: allMentions,
+                    contextInfo: getContextInfo(allMentions),
+                });
+            } else {
+                const media = await processMediaMessage(deletedMsg);
+                if (media) {
+                    const alertText = media.caption
+                        ? `${buildTextAlert()}\n\n*Caption:*\n${media.caption}`
+                        : buildTextAlert();
+
+                    if (media.type === 'sticker' || media.type === 'audio') {
+                        await Gifted.sendMessage(targetJid, {
+                            text: alertText,
+                            mentions: allMentions,
+                            contextInfo: getContextInfo(allMentions),
+                        });
+                        await Gifted.sendMessage(targetJid, {
+                            [media.type]: { url: media.path },
+                            mentions: allMentions,
+                            contextInfo: getContextInfo(allMentions),
+                            ...(media.type === 'audio' ? { ptt: media.ptt, mimetype: media.mimetype } : {})
+                        });
+                    } else {
+                        await Gifted.sendMessage(targetJid, {
+                            [media.type]: { url: media.path },
+                            caption: alertText,
+                            mentions: allMentions,
+                            contextInfo: getContextInfo(allMentions),
+                            ...(media.type === 'document' ? { mimetype: media.mimetype, fileName: media.fileName } : {})
+                        });
+                    }
+
+                    setTimeout(() => {
+                        fs.unlink(media.path).catch(err => logger.error('Media cleanup failed:', err));
+                    }, 30000);
+                }
+            }
+        } catch (error) {
+            logger.error('Failed to send ANTIDELETE alert:', error);
+        }
+    };
+
     try {
-        const promises = [];
-
-        if (antiDelete === 'inchat') {
-            promises.push((async () => {
-                try {
-                    const baseAlert = `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n` +
-                        `*👤 Sent By:* ${finalSenderDisplay}\n` +
-                        `*👤 Deleted By:* ${finalDeleterDisplay}\n` +
-                        `*🕑 Time:* ${currentTime}\n` +
-                        `*📆 Date:* ${currentDate}\n` +
-                        `${chatInfo}`;
-
-                    if (deletedMsg.message?.conversation || deletedMsg.message?.extendedTextMessage?.text) {
-                        const text = deletedMsg.message.conversation ||
-                            deletedMsg.message.extendedTextMessage.text;
-
-                        await Gifted.sendMessage(key.remoteJid, {
-                            text: `${baseAlert}\n\n📝 *Content:* ${text}`,
-                            mentions: allMentions,
-                            contextInfo: getContextInfo(allMentions),
-                        });
-                    } else {
-                        const media = await processMediaMessage(deletedMsg);
-                        if (media) {
-                            if (media.type === 'sticker' || media.type === 'audio') {
-                                await Gifted.sendMessage(key.remoteJid, {
-                                    [media.type]: { url: media.path },
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                    ...(media.type === 'audio' ? {
-                                        ptt: media.ptt,
-                                        mimetype: media.mimetype
-                                    } : {})
-                                });
-                                await Gifted.sendMessage(key.remoteJid, {
-                                    text: media.caption ?
-                                        `${baseAlert}\n\n📌 *Caption:* ${media.caption}` :
-                                        baseAlert,
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                });
-                            } else {
-                                await Gifted.sendMessage(key.remoteJid, {
-                                    [media.type]: { url: media.path },
-                                    caption: media.caption ?
-                                        `${baseAlert}\n\n📌 *Caption:* ${media.caption}` :
-                                        baseAlert,
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                    ...(media.type === 'document' ? {
-                                        mimetype: media.mimetype,
-                                        fileName: media.fileName
-                                    } : {})
-                                });
-                            }
-
-                            setTimeout(() => {
-                                fs.unlink(media.path).catch(err =>
-                                    logger.error('Media cleanup failed:', err)
-                                );
-                            }, 30000);
-                        }
-                    }
-                } catch (error) {
-                    logger.error('Failed to process in-chat ANTIDELETE:', error);
-                }
-            })());
+        // ── NEW: target logic ─────────────────────────────────────────────────
+        if (antiDelete === 'indm' || antiDelete === 'pm') {
+            await sendToTarget(botOwnerJid);
+        } else if (antiDelete === 'inchat' || antiDelete === 'chats') {
+            await sendToTarget(key.remoteJid);
+        } else if (antiDelete === 'on') {
+            // both
+            await Promise.all([
+                sendToTarget(botOwnerJid),
+                sendToTarget(key.remoteJid),
+            ]);
+        } else if (antiDelete.endsWith('@s.whatsapp.net') || antiDelete.endsWith('@g.us')) {
+            // specific jid
+            await sendToTarget(antiDelete);
         }
-
-        if (antiDelete === 'indm') {
-            promises.push((async () => {
-                try {
-                    const ownerContext = `*👤 Sent By:* ${finalSenderDisplay}\n*👤 Deleted By:* ${finalDeleterDisplay}\n${chatInfo}`;
-
-                    if (deletedMsg.message?.conversation || deletedMsg.message?.extendedTextMessage?.text) {
-                        const text = deletedMsg.message.conversation ||
-                            deletedMsg.message.extendedTextMessage.text;
-
-                        await Gifted.sendMessage(botOwnerJid, {
-                            text: `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n*Deleted Msg:*\n${text}`,
-                            mentions: allMentions,
-                            contextInfo: getContextInfo(allMentions),
-                        });
-                    } else {
-                        const media = await processMediaMessage(deletedMsg);
-                        if (media) {
-                            const dmAlert = media.caption ?
-                                `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}\n\n*Caption:*\n${media.caption}` :
-                                `*𝙰𝙽𝚃𝙸𝙳𝙴𝙻𝙴𝚃𝙴 𝙼𝙴𝚂𝚂𝙰𝙶𝙴 𝚂𝚈𝚂𝚃𝙴𝙼*\n\n*🕑 Time:* ${currentTime}\n*📆 Date:* ${currentDate}\n\n${ownerContext}`;
-
-                            if (media.type === 'sticker' || media.type === 'audio') {
-                               await Gifted.sendMessage(botOwnerJid, {
-                                    text: dmAlert,
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                });
-                                await Gifted.sendMessage(botOwnerJid, {
-                                    [media.type]: { url: media.path },
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                    ...(media.type === 'audio' ? {
-                                        ptt: media.ptt,
-                                        mimetype: media.mimetype
-                                    } : {})
-                                });
-                            } else {
-                                await Gifted.sendMessage(botOwnerJid, {
-                                    [media.type]: { url: media.path },
-                                    caption: dmAlert,
-                                    mentions: allMentions,
-                                    contextInfo: getContextInfo(allMentions),
-                                    ...(media.type === 'document' ? {
-                                        mimetype: media.mimetype,
-                                        fileName: media.fileName
-                                    } : {})
-                                });
-                            }
-
-                            setTimeout(() => {
-                                fs.unlink(media.path).catch(err =>
-                                    logger.error('Media cleanup failed:', err)
-                                );
-                            }, 30000);
-                        }
-                    }
-                } catch (error) {
-                    logger.error('Failed to forward ANTIDELETE to owner:', error);
-                    await Gifted.sendMessage(botOwnerJid, {
-                        text: `⚠️ Failed to forward deleted message from ${finalDeleterDisplay}\n\nError: ${error.message}`,
-                        mentions: allMentions,
-                        contextInfo: getContextInfo(allMentions),
-                    });
-                }
-            })());
-        }
-
-        await Promise.all(promises);
+        // ─────────────────────────────────────────────────────────────────────
     } catch (error) {
         logger.error('Anti-delete handling failed:', error);
     }
@@ -1193,124 +1253,6 @@ const _resolveLid = async (Gifted, lid) => {
         if (r) return r;
     } catch (e) {}
     return lid;
-};
-
-const GiftedAntiEdit = async (Gifted, updateData, findOriginal) => {
-    try {
-        const settings = await getAllSettings();
-        const antiEdit = settings.ANTI_EDIT || 'indm';
-        if (antiEdit === 'false' || antiEdit === 'off') return;
-
-        const { key, update } = updateData;
-        if (!key || !update?.message) return;
-        if (key.fromMe) return;
-        if (key.remoteJid === 'status@broadcast') return;
-
-        const rawChatJid = key.remoteJid;
-        const msgId = key.id;
-
-        const resolvedChatJid = await _resolveLid(Gifted, rawChatJid);
-        const isGroup = resolvedChatJid?.endsWith('@g.us') || rawChatJid?.endsWith('@g.us');
-
-        const editedMsg = update.message;
-        const newContent = _extractEditContent(editedMsg);
-        if (!newContent) return;
-
-        const MEDIA_TYPES = ['imageMessage', 'videoMessage', 'documentMessage'];
-
-        let originalContent = 'N/A';
-        let originalPushName = null;
-        let originalMediaObj = null;
-        let origMsgType = null;
-        let origMsgData = null;
-        let cachedSender = null;
-
-        if (findOriginal) {
-            const orig = findOriginal(rawChatJid, msgId);
-            if (orig?.message) {
-                origMsgType = Object.keys(orig.message)[0];
-                origMsgData = orig.message[origMsgType];
-                originalContent = _extractEditContent(orig.message) || 'N/A';
-                if (MEDIA_TYPES.includes(origMsgType)) originalMediaObj = orig;
-            }
-            if (orig?.originalPushName) originalPushName = orig.originalPushName;
-            if (orig?.originalSender && !orig.originalSender.endsWith('@lid')) {
-                cachedSender = orig.originalSender;
-            }
-        }
-
-        let sender = cachedSender
-            || (key.participantPn && !key.participantPn.endsWith('@lid') ? key.participantPn : null)
-            || key.participant
-            || (isGroup ? null : resolvedChatJid);
-        sender = await _resolveLid(Gifted, sender);
-        const senderNum = sender && !sender.endsWith('@lid')
-            ? sender.split('@')[0]
-            : resolvedChatJid?.split('@')[0] || 'Unknown';
-
-        const botFooter = settings.FOOTER || '';
-        const timeZone = settings.TIME_ZONE || 'Asia/Karachi';
-
-        let chatLabel = isGroup ? resolvedChatJid : 'DM';
-        if (isGroup) {
-            try { const meta = await getGroupMetadata(Gifted, resolvedChatJid); chatLabel = meta?.subject || resolvedChatJid; } catch (e) {}
-        }
-
-        const currentTime = formatTime(Date.now(), timeZone);
-        const currentDate = formatDate(Date.now(), timeZone);
-        const mentions = sender && !sender.endsWith('@lid') ? [sender] : [];
-
-        const origCaption = originalMediaObj ? (_extractRawCaption(originalMediaObj.message) || '(no caption)') : originalContent;
-        const newCaption = _extractRawCaption(update.message) || newContent;
-
-        const alertText = `*✏️ ANTI-EDIT MESSAGE SYSTEM*\n\n` +
-            `*👤 Edited By:* @${senderNum}\n` +
-            `*🕑 Time:* ${currentTime}\n` +
-            `*📆 Date:* ${currentDate}\n` +
-            `*💬 Chat:* ${chatLabel}\n\n` +
-            `*📄 Original ${originalMediaObj ? 'Caption' : 'Message'}:* ${origCaption}\n` +
-            `*📝 Edited To:* ${newCaption}`;
-
-        const sendAlert = async (targetJid) => {
-            if (!targetJid) return;
-            if (originalMediaObj) {
-                try {
-                    const buffer = await downloadMediaMessage(originalMediaObj, 'buffer', {});
-                    if (origMsgType === 'imageMessage') {
-                        await Gifted.sendMessage(targetJid, { image: buffer, caption: alertText, mentions });
-                    } else if (origMsgType === 'videoMessage') {
-                        await Gifted.sendMessage(targetJid, { video: buffer, caption: alertText, mentions });
-                    } else if (origMsgType === 'documentMessage') {
-                        await Gifted.sendMessage(targetJid, {
-                            document: buffer,
-                            fileName: origMsgData?.fileName || 'document',
-                            mimetype: origMsgData?.mimetype || 'application/octet-stream',
-                            caption: alertText,
-                            mentions,
-                        });
-                    } else {
-                        await Gifted.sendMessage(targetJid, { text: alertText, mentions });
-                    }
-                    return;
-                } catch (mediaErr) {
-                    console.error('[ANTI-EDIT] media forward failed:', mediaErr.message);
-                }
-            }
-            await Gifted.sendMessage(targetJid, { text: alertText, mentions });
-        };
-
-        const sendJid = resolvedChatJid && !resolvedChatJid.endsWith('@lid') ? resolvedChatJid : rawChatJid;
-        const dmTarget = Gifted.user?.id ? `${Gifted.user.id.split(':')[0]}@s.whatsapp.net` : null;
-
-        if (antiEdit === 'indm' || antiEdit === 'on') {
-            if (dmTarget) { try { await sendAlert(dmTarget); } catch (e) {} }
-        }
-        if ((antiEdit === 'inchat' || antiEdit === 'on') && sendJid) {
-            try { await sendAlert(sendJid); } catch (e) {}
-        }
-    } catch (err) {
-        console.error('Anti-edit error:', err.message);
-    }
 };
 
 async function antiStickerHandler(mek, Gifted) {
