@@ -88,9 +88,9 @@ const serializeMessage = async (ms, Gifted, settings = {}) => {
         body = ms.message.videoMessage.caption;
     }
 
-    // ── PREFIX LOGIC ──────────────────────────────────────────────────────────────
+// ── PREFIX LOGIC ──────────────────────────────────────────────────────────────
 
-const rawPrefix = settings.PREFIX ?? '.';
+const rawPrefix = await getSetting("PREFIX") ?? settings.PREFIX ?? '.';
 
 body = (body || '').toString().trim();
 
@@ -114,21 +114,14 @@ const validPrefixes = [...new Set(
 const nullPrefix =
     rawPrefix === null ||
     rawPrefix === 'null' ||
+    rawPrefix === '' ||
     validPrefixes.length === 0;
 
 let matchedPrefix = '';
 let isCommand = false;
 
-// ── DEBUG LOG START ──────────────────────────────────────────────────────────
-console.log("╭──────────────────────────────╮");
-console.log("│ ⚙️ PREFIX ENGINE INITIALIZED │");
-console.log("╰──────────────────────────────╯");
-
-console.log("📥 INPUT BODY:", body);
+// DEBUG
 console.log("📌 RAW PREFIX:", rawPrefix);
-console.log("📚 VALID PREFIXES:", validPrefixes);
-console.log("🛑 NULL PREFIX MODE:", nullPrefix);
-// ─────────────────────────────────────────────────────────────────────────────
 
 // NULL PREFIX MODE
 if (nullPrefix) {
@@ -140,8 +133,6 @@ if (nullPrefix) {
     matchedPrefix = '';
 
     console.log("⚡ MODE: NULL PREFIX");
-    console.log("🧠 FIRST WORD:", firstWord);
-    console.log("✅ COMMAND DETECTED:", isCommand);
 }
 
 // NORMAL PREFIX MODE
@@ -149,13 +140,13 @@ else {
 
     matchedPrefix = validPrefixes
         .sort((a, b) => b.length - a.length)
-        .find(p => lowerBody.startsWith(String(p).toLowerCase())) || '';
+        .find(p => lowerBody.startsWith(
+            String(p).toLowerCase()
+        )) || '';
 
     isCommand = matchedPrefix.length > 0;
 
     console.log("⚡ MODE: PREFIX");
-    console.log("🔍 MATCHED PREFIX:", matchedPrefix || "NONE");
-    console.log("✅ COMMAND DETECTED:", isCommand);
 }
 
 // REMOVE PREFIX
@@ -178,7 +169,6 @@ const q = args.join(' ');
 
 // PREFIX USED
 const botPrefix = matchedPrefix || null;
-
 // ── FINAL DEBUG LOG ──────────────────────────────────────────────────────────
 console.log("╭──────────────────────────────╮");
 console.log("│ 🚀 PREFIX PARSE COMPLETE     │");
