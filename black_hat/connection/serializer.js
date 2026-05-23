@@ -88,79 +88,109 @@ const serializeMessage = async (ms, Gifted, settings = {}) => {
         body = ms.message.videoMessage.caption;
     }
 
-    const prefixes = settings.PREFIX ?? '.';
+    // ── PREFIX LOGIC ──────────────────────────────────────────────────────────────
+
+const rawPrefix = settings.PREFIX ?? '.';
 
 body = (body || '').toString().trim();
 
-let usedPrefix = '';
+const lowerBody = body.toLowerCase();
+
+// SAFE PREFIX LIST
+const prefixList = Array.isArray(rawPrefix)
+    ? rawPrefix
+    : typeof rawPrefix === 'string'
+        ? rawPrefix.split(',')
+        : [];
+
+// CLEAN PREFIXES
+const validPrefixes = [...new Set(
+    prefixList
+        .map(p => String(p).trim())
+        .filter(Boolean)
+)];
+
+// NULL PREFIX CHECK
+const nullPrefix =
+    rawPrefix === null ||
+    rawPrefix === 'null' ||
+    validPrefixes.length === 0;
+
+let matchedPrefix = '';
 let isCommand = false;
 
-// LOG OBJECT (DEBUG MODE)
-const prefixLog = {
-    input: body,
-    prefixes,
-    usedPrefix: null,
-    isCommand: false,
-    mode: 'unknown',
-    commandDetected: null,
-};
+// ── DEBUG LOG START ──────────────────────────────────────────────────────────
+console.log("╭──────────────────────────────╮");
+console.log("│ ⚙️ PREFIX ENGINE INITIALIZED │");
+console.log("╰──────────────────────────────╯");
 
-// NULL PREFIX
-if (prefixes === null || prefixes === 'null') {
-    isCommand = true;
-    usedPrefix = '';
-    prefixLog.mode = 'NULL_PREFIX';
+console.log("📥 INPUT BODY:", body);
+console.log("📌 RAW PREFIX:", rawPrefix);
+console.log("📚 VALID PREFIXES:", validPrefixes);
+console.log("🛑 NULL PREFIX MODE:", nullPrefix);
+// ─────────────────────────────────────────────────────────────────────────────
+
+// NULL PREFIX MODE
+if (nullPrefix) {
+
+    const firstWord = lowerBody.split(/\s+/)[0];
+
+    isCommand = firstWord.length > 0;
+
+    matchedPrefix = '';
+
+    console.log("⚡ MODE: NULL PREFIX");
+    console.log("🧠 FIRST WORD:", firstWord);
+    console.log("✅ COMMAND DETECTED:", isCommand);
 }
 
-// MULTIPLE PREFIXES
-else if (Array.isArray(prefixes)) {
+// NORMAL PREFIX MODE
+else {
 
-    usedPrefix = prefixes
-        .filter(p => typeof p === 'string' && p.length > 0)
+    matchedPrefix = validPrefixes
         .sort((a, b) => b.length - a.length)
-        .find(p => body.startsWith(p)) || '';
+        .find(p => lowerBody.startsWith(String(p).toLowerCase())) || '';
 
-    isCommand = usedPrefix.length > 0;
+    isCommand = matchedPrefix.length > 0;
 
-    prefixLog.mode = 'MULTIPLE_PREFIX';
+    console.log("⚡ MODE: PREFIX");
+    console.log("🔍 MATCHED PREFIX:", matchedPrefix || "NONE");
+    console.log("✅ COMMAND DETECTED:", isCommand);
 }
 
-// SINGLE PREFIX
-else if (typeof prefixes === 'string') {
-
-    usedPrefix = body.startsWith(prefixes)
-        ? prefixes
-        : '';
-
-    isCommand = usedPrefix.length > 0;
-
-    prefixLog.mode = 'SINGLE_PREFIX';
-}
-
-// FINAL PROCESS
+// REMOVE PREFIX
 const fullBody = isCommand
-    ? body.slice(usedPrefix.length).trim()
-    : '';
+    ? body.slice(matchedPrefix.length).trim()
+    : body;
 
-const command = isCommand && fullBody
+// COMMAND
+const command = fullBody
     ? fullBody.split(/\s+/)[0].toLowerCase()
     : '';
 
-const args = isCommand && fullBody
+// ARGS
+const args = fullBody
     ? fullBody.split(/\s+/).slice(1)
     : [];
 
+// QUERY
 const q = args.join(' ');
 
-const botPrefix = usedPrefix;
+// PREFIX USED
+const botPrefix = matchedPrefix || null;
 
-// UPDATE LOGS
-prefixLog.usedPrefix = usedPrefix;
-prefixLog.isCommand = isCommand;
-prefixLog.commandDetected = command || null;
+// ── FINAL DEBUG LOG ──────────────────────────────────────────────────────────
+console.log("╭──────────────────────────────╮");
+console.log("│ 🚀 PREFIX PARSE COMPLETE     │");
+console.log("╰──────────────────────────────╯");
 
-// CONSOLE LOG (DEBUG)
-console.log("⚙️ PREFIX DEBUG LOG:", JSON.stringify(prefixLog, null, 2));
+console.log("💬 FULL BODY:", fullBody);
+console.log("🎯 COMMAND:", command || "NONE");
+console.log("📦 ARGS:", args);
+console.log("🔎 QUERY:", q || "NONE");
+console.log("🏷️ USED PREFIX:", botPrefix || "NULL");
+console.log("════════════════════════════════════════");
+// ─────────────────────────────────────────────────────────────────────────────
 
     const repliedMessage = ms.message?.extendedTextMessage?.contextInfo?.quotedMessage || null;
     const quoted = type == 'extendedTextMessage' && 
@@ -240,4 +270,3 @@ module.exports = {
     serializeMessage,
     downloadMediaMessage
 };
-        
