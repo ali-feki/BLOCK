@@ -1,5 +1,6 @@
 const { getContentType, downloadContentFromMessage, downloadMediaMessage } = require('gifted-baileys');
 const { getLidMapping } = require('./groupCache');
+const { getSetting } = require("../database/settings");
 
 const standardizeJid = (jid) => {
     if (!jid) return '';
